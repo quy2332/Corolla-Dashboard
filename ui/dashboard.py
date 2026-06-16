@@ -28,7 +28,7 @@ class Dashboard:
         self.handle_events()
 
         self.screen.fill((15, 15, 18))
-        self.current_screen.render(self.screen, state)
+        self.current_screen.draw(self.screen, state)
 
         pygame.display.flip()
 
