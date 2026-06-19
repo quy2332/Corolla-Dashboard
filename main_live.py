@@ -6,7 +6,7 @@ from ui.dashboard import Dashboard
 
 async def main():
     source = BleObdSource()
-    dashboard = Dashboard(width=800, height=480)
+    dashboard = Dashboard(width=1024, height=600)
 
     try:
         async for state in source.samples():

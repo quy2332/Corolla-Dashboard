@@ -2,7 +2,7 @@ from telemetry.replay import CsvReplaySource
 from ui.dashboard import Dashboard
 
 source = CsvReplaySource("data/brc_replay_10hz_project.csv", realtime=True)
-dashboard = Dashboard(width=800, height=480)
+dashboard = Dashboard(width=1024, height=600)
 
 try:
     for state in source.samples():

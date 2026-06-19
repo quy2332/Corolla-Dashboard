@@ -4,15 +4,17 @@ from ui.screens.gauge_screen import GaugeScreen
 
 
 class Dashboard:
-    def __init__(self, width=800, height=480):
+    def __init__(self, width=800, height=480, fullscreen=True):
         pygame.init()
 
-        self.width = width
-        self.height = height
-        self.screen = pygame.display.set_mode((width, height))
+        flags = pygame.FULLSCREEN if fullscreen else 0
+
+        self.screen = pygame.display.set_mode((width, height), flags)
         pygame.display.set_caption("Corolla OS")
 
-        self.current_screen = GaugeScreen(width, height)
+        self.width, self.height = self.screen.get_size()
+
+        self.current_screen = GaugeScreen(self.width, self.height)
         self.running = True
 
     def handle_events(self):
