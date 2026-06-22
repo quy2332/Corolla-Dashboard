@@ -20,12 +20,23 @@ class GaugeScreen:
             "assets/fonts/roboto.ttf",
             int(height * 0.04)
         )
-
-    def draw(self, screen, state, source_name="REPLAY"):
+    
+    def draw(self, screen, state, source_name="REPLAY", slot="fullscreen"):
         w = self.width
         h = self.height
 
-        center = (int(w * 0.50), int(h * 0.43))
+        if slot == "left":
+            x_offset = -w // 4
+        elif slot == "right":
+            x_offset = w // 4
+        else:
+            x_offset = 0
+
+        center = (
+            int(w * 0.50) + x_offset,
+            int(h * 0.43)
+        )
+
         radius = int(min(w, h) * 0.33)
 
         self.rpm_arc.draw(screen, center, radius, state.rpm)
@@ -33,9 +44,9 @@ class GaugeScreen:
         self.speed_display.draw(screen, state.speed_mph, center, h)
         self.gear_display.draw(screen, "D", center, h)
 
-        rpm_anchor = (w * 0.62, center[1] + radius * 0.18)
-        self.rpm_display.draw(screen, state.rpm, rpm_anchor, h)
+        rpm_anchor = (
+            w * 0.62 + x_offset,
+            center[1] + radius * 0.18
+        )
 
-        # Placeholder for future source/debug display
-        # source = self.font_unit.render(f"SOURCE {source_name}", True, (120, 120, 120))
-        # screen.blit(source, source.get_rect(center=(w * 0.50, h * 0.90)))
+        self.rpm_display.draw(screen, state.rpm, rpm_anchor, h)
