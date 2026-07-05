@@ -32,7 +32,7 @@ class MainMenuScreen:
         )
 
         self.icon_size = int(height * 0.24)
-        self.highlight_size = int(self.icon_size * 1.08)
+        self.highlight_size = int(self.icon_size * 1.01)
 
         self.icons = {}
 
@@ -72,9 +72,6 @@ class MainMenuScreen:
 
         w, h = screen.get_size()
 
-        #title = self.title_font.render("COROLLA OS", True, (245, 245, 245))
-        #screen.blit(title, title.get_rect(center=(w * 0.5, h * 0.16)))
-
         tile_count = len(self.options)
         icon_size = self.icon_size
         gap = w * 0.045
@@ -111,10 +108,3 @@ class MainMenuScreen:
         selected_rect = icon_rects[self.selected_index]
         highlight_rect = self.highlight.get_rect(center=selected_rect.center)
         screen.blit(self.highlight, highlight_rect)
-
-        hint = self.hint_font.render(
-            "LEFT/RIGHT SELECT   ENTER OPEN   ESC BACK",
-            True,
-            (120, 120, 120)
-        )
-        screen.blit(hint, hint.get_rect(center=(w * 0.5, h * 0.95)))

@@ -17,6 +17,8 @@ class Dashboard:
 
         flags = pygame.FULLSCREEN if fullscreen else 0
 
+        self.clock = pygame.time.Clock()
+
         self.screen = pygame.display.set_mode((width, height), flags)
         pygame.display.set_caption("Corolla OS")
 
@@ -27,9 +29,15 @@ class Dashboard:
         self.volume_overlay = VolumeOverlay(self.height)
 
 
-        self.sidebar_icon_size = int(self.height * 0.11)
+        self.sidebar_icon_size = int(self.height * 0.22)
 
         self.sidebar_icons = {}
+
+        self.sidebar_scaled_icons = {}
+
+        self.sidebar_visual_index = 0.0
+        self.sidebar_anim_progress = 0.0
+        self.sidebar_anim_speed = 0.8
 
         sidebar_icon_files = {
             "gauge": "assets/images/gauge.png",
@@ -65,7 +73,7 @@ class Dashboard:
         self.sidebar_options = ["gauge", "system", "gps", "music"]
 
         self.right_hold_start = None
-        self.right_hold_seconds = 5.0
+        self.right_hold_seconds = 3.0
         self.right_hold_consumed = False
 
         self.running = True
@@ -265,14 +273,41 @@ class Dashboard:
 
             if held_time >= self.right_hold_seconds:
                 self.sidebar_open = True
+                self.sidebar_anim_progress = 0.0
                 self.right_hold_consumed = True
                 self.right_hold_start = None
         else:
             if not keys[pygame.K_RIGHT]:
                 self.right_hold_start = None
 
+    def update_sidebar_animation(self):
+        target = float(self.sidebar_selected_index)
+        total = len(self.sidebar_options)
+
+        diff = target - self.sidebar_visual_index
+
+        if diff > total / 2:
+            diff -= total
+        elif diff < -total / 2:
+            diff += total
+
+        self.sidebar_visual_index += diff * self.sidebar_anim_speed
+
+        if self.sidebar_visual_index < 0:
+            self.sidebar_visual_index += total
+        elif self.sidebar_visual_index >= total:
+            self.sidebar_visual_index -= total
+
     def update(self):
         self.update_long_press()
+
+        if self.sidebar_open:
+            self.sidebar_anim_progress = min(
+                1.0,
+                self.sidebar_anim_progress + self.sidebar_anim_speed
+            )
+            self.update_sidebar_animation()
+
 
     def draw_screen_by_name(self, target_surface, screen_name, state, slot="fullscreen"):
         if screen_name == "main_menu":
@@ -343,41 +378,61 @@ class Dashboard:
         sidebar_w = int(self.width * 0.18)
         x = self.width - sidebar_w
 
-        overlay = pygame.Surface((sidebar_w, self.height), pygame.SRCALPHA)
-        overlay.fill((10, 10, 14, 230))
-        self.screen.blit(overlay, (x, 0))
+        t = self.sidebar_anim_progress
+        ease = 1 - (1 - t) * (1 - t)
+        slide_offset = int(sidebar_w * (1.0 - ease))
+        x += slide_offset
 
-        pygame.draw.line(
-            self.screen,
-            (220, 220, 230),
-            (x, 0),
-            (x, self.height),
-            2
-        )
+        gradient_w = int(self.width * 0.35)
+        gradient_x = self.width - gradient_w
 
-        
-        start_y = self.height * 0.30
-        gap = self.height * 0.12
+        gradient = pygame.Surface((gradient_w, self.height), pygame.SRCALPHA)
+
+        for i in range(gradient_w):
+            t = i / gradient_w
+            alpha = int(185 * (t ** 1.2))
+
+            pygame.draw.line(
+                gradient,
+                (0, 0, 0, alpha),
+                (i, 0),
+                (i, self.height)
+            )
+
+        self.screen.blit(gradient, (gradient_x, 0))
+
+        center_x = x + sidebar_w * 0.5
+        center_y = self.height * 0.50
+        gap = self.height * 0.22
+        total = len(self.sidebar_options)
 
         for i, screen_name in enumerate(self.sidebar_options):
-            y = start_y + i * gap
-            selected = i == self.sidebar_selected_index
+            distance = i - self.sidebar_visual_index
 
-            center = (x + sidebar_w // 2, y)
+            if distance > total / 2:
+                distance -= total
+            elif distance < -total / 2:
+                distance += total
 
-            icon = self.sidebar_icons[screen_name]
+            if abs(distance) > 1.25:
+                continue
 
-            icon_rect = icon.get_rect(center=center)
+            y = center_y + distance * gap
 
-            if selected:
-                pygame.draw.rect(
-                    self.screen,
-                    (255, 255, 255),
-                    icon_rect.inflate(12, 12),
-                    2
-                )
+            closeness = max(0.0, 1.0 - abs(distance))
 
-            self.screen.blit(icon, icon_rect)
+            scale = 0.70 + 0.30 * closeness
+            alpha = int(120 + 135 * closeness)
+
+            base_icon = self.sidebar_icons[screen_name]
+            icon_size = int(self.sidebar_icon_size * scale)
+
+            icon = self.get_sidebar_icon(screen_name, icon_size).copy()
+            icon.set_alpha(alpha)
+
+            icon_rect = icon.get_rect(center=(center_x, y))
+
+            self.screen.blit(icon, icon_rect) 
 
 
     def render_long_press_progress(self):
@@ -430,7 +485,20 @@ class Dashboard:
         self.render_active_screen(state)
         self.render_overlays()
 
+
         pygame.display.flip()
+        self.clock.tick(30)
+
+    def get_sidebar_icon(self, screen_name, icon_size):
+        key = (screen_name, icon_size)
+
+        if key not in self.sidebar_scaled_icons:
+            self.sidebar_scaled_icons[key] = pygame.transform.smoothscale(
+                self.sidebar_icons[screen_name],
+                (icon_size, icon_size)
+            )
+
+        return self.sidebar_scaled_icons[key]
 
     def close(self):
         pygame.quit()
