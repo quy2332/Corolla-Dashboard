@@ -31,6 +31,7 @@ class CsvReplaySource:
                     speed_mph=to_float(row["speed_mph"]),
                     coolant_c=to_float(row["coolant_c"]),
                     accel_g=to_float(row["accel_g"]),
+                    distance_miles=to_float(row["distance_miles"]),
                 )
 
                 if self.realtime and prev_t is not None:

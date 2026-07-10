@@ -4,7 +4,7 @@ from ui.widgets.rpm_arc import RpmArc
 from ui.widgets.speed_display import SpeedDisplay
 from ui.widgets.gear_display import GearDisplay
 from ui.widgets.rpm_display import RpmDisplay
-
+from ui.widgets.odometer import Odometer
 
 class GaugeScreen:
     def __init__(self, width, height):
@@ -15,6 +15,8 @@ class GaugeScreen:
         self.speed_display = SpeedDisplay(height)
         self.gear_display = GearDisplay(height)
         self.rpm_display = RpmDisplay(height)
+        self.odometer = Odometer(height)
+
 
         self.font_unit = pygame.font.Font(
             "assets/fonts/roboto.ttf",
@@ -50,3 +52,10 @@ class GaugeScreen:
         )
 
         self.rpm_display.draw(screen, state.rpm, rpm_anchor, h)
+
+        self.odometer.draw(
+            screen,
+            state.distance_miles,
+            center,
+            h
+        )
