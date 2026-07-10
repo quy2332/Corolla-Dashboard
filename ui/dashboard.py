@@ -14,6 +14,7 @@ from ui.widgets.volume_overlay import VolumeOverlay
 class Dashboard:
     def __init__(self, width=1024, height=600, fullscreen=True):
         pygame.init()
+        pygame.mouse.set_visible(False)
 
         flags = pygame.FULLSCREEN if fullscreen else 0
 
@@ -166,6 +167,7 @@ class Dashboard:
             if held_time < self.right_hold_seconds:
                 self.handle_right_tap()
 
+
     def handle_keydown(self, key):
         if self.sidebar_open:
             self.handle_sidebar_key(key)
@@ -183,13 +185,10 @@ class Dashboard:
             self.volume_overlay.show()
             return
 
-        if (
-            self.current_screen_name == "music"
-            and not self.split_mode
-            and hasattr(self.screens["music"], "handle_key")
-        ):
-            if key in (pygame.K_SPACE, pygame.K_LEFT):
-                self.screens["music"].handle_key(key)
+        # RIGHT is special because tap = app action, hold = sidebar.
+        # So we do not route RIGHT on keydown.
+        if key != pygame.K_RIGHT:
+            if self.route_to_current_screen(key):
                 return
 
         if key == pygame.K_ESCAPE:
@@ -249,6 +248,45 @@ class Dashboard:
                     self.maximize_focused_panel()
             elif self.current_screen_name == "main_menu":
                 self.select_main_menu_option()
+           
+
+    def handle_options_key(self, key):
+        if key == pygame.K_ESCAPE:
+            self.options_open = False
+            return True
+
+        if key == pygame.K_RETURN:
+            selected = self.options_items[self.options_selected_index]
+
+            if selected == "close":
+                self.options_open = False
+            else:
+                self.options_open = False
+
+            return True
+
+        if key == pygame.K_UP:
+            self.options_selected_index = (
+                self.options_selected_index - 1
+            ) % len(self.options_items)
+            return True
+
+        if key == pygame.K_DOWN:
+            self.options_selected_index = (
+                self.options_selected_index + 1
+            ) % len(self.options_items)
+            return True
+
+        if key == pygame.K_LEFT:
+            self.change_selected_option(-1)
+            return True
+
+        if key == pygame.K_RIGHT:
+            self.change_selected_option(1)
+            return True
+
+        return False
+
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -307,6 +345,10 @@ class Dashboard:
                 self.sidebar_anim_progress + self.sidebar_anim_speed
             )
             self.update_sidebar_animation()
+        screen = self.screens.get(self.current_screen_name)
+
+        if screen and hasattr(screen, "update"):
+            screen.update()
 
 
     def draw_screen_by_name(self, target_surface, screen_name, state, slot="fullscreen"):
@@ -432,7 +474,7 @@ class Dashboard:
 
             icon_rect = icon.get_rect(center=(center_x, y))
 
-            self.screen.blit(icon, icon_rect) 
+            self.screen.blit(icon, icon_rect)
 
 
     def render_long_press_progress(self):
@@ -499,6 +541,16 @@ class Dashboard:
             )
 
         return self.sidebar_scaled_icons[key]
+
+
+    def route_to_current_screen(self, key):
+        screen = self.screens.get(self.current_screen_name)
+
+        if screen and hasattr(screen, "handle_key"):
+            return screen.handle_key(key)
+
+        return False
+
 
     def close(self):
         pygame.quit()

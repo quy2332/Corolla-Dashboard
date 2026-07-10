@@ -90,9 +90,12 @@ class MusicPlayer:
         return int(round(self.volume * 100))
 
     def get_position_seconds(self):
+        if not pygame.mixer.music.get_busy() and not self.is_playing:
+            return 0
+
         pos_ms = pygame.mixer.music.get_pos()
 
         if pos_ms < 0:
             return 0
 
-        return pos_ms // 1000
+        return pos_ms // 1000 

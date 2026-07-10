@@ -1,14 +1,39 @@
 {
-  "artist": "NewJeans",
   "songs": {
     "How Sweet (UK Garage Remix by Swiiim)": {
       "title": "How Sweet (UK Garage Remix by Swiiim)",
-      "duration": 212
+      "duration": 212,
+      "tags": [
+	"newjeans",
+	"kpop",
+	"uk_garage",
+	"remix"
+      ]
     },
 
     "ASAP (Jersey Club Remix By Back To Baek)": {
       "title": "ASAP (Jersey Club Remix by Back To Baek)",
-      "duration": 150
+      "duration": 150,
+      "tags": [
+	"newjeans",
+	"kpop",
+	"jersey_club",
+	"remix"
+      ]
+
+    },
+
+    "Zero (Coke Studio Remix Solo Version)": {
+      "title": "Zero (Coke Studio Remix Solo Version)",
+      "duration": 197,
+      "tags": [
+	"newjeans",
+	"kpop",
+	"remix"
+      ]
+
     }
+
+
   }
 }
