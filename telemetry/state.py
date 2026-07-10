@@ -7,3 +7,5 @@ class TelemetryState:
     speed_mph: float = 0.0
     coolant_c: float = 0.0
     accel_g: float = 0.0
+    distance_miles: float = 0.0
+
