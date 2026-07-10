@@ -1,7 +1,7 @@
 from telemetry.replay import CsvReplaySource
 from ui.dashboard import Dashboard
 
-source = CsvReplaySource("data/mpg_replay_snippet.csv", realtime=True)
+source = CsvReplaySource("data/mpg_replay.csv", realtime=True)
 dashboard = Dashboard(width=1024, height=600)
 
 try:
