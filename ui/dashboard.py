@@ -10,6 +10,7 @@ from ui.screens.main_menu_screen import MainMenuScreen
 from ui.widgets.status_bar import StatusBar
 from ui.widgets.volume_overlay import VolumeOverlay
 
+from music.player import MUSIC_ENDED
 
 class Dashboard:
     def __init__(self, width=1024, height=600, fullscreen=True):
@@ -24,10 +25,20 @@ class Dashboard:
         pygame.display.set_caption("Corolla OS")
 
         self.width, self.height = self.screen.get_size()
+        self.sidebar_gradient = self.create_sidebar_gradient()
 
         self.main_menu = MainMenuScreen(self.width, self.height)
         self.status_bar = StatusBar(self.height)
         self.volume_overlay = VolumeOverlay(self.height)
+
+        self.debug_overlay_enabled = True
+        self.debug_font = pygame.font.Font(
+            "assets/fonts/roboto.ttf",
+            int(self.height * 0.024)
+        )
+        self.debug_last_update = 0.0
+        self.debug_fps_text = "FPS: 0.0"
+        self.debug_surface = None
 
 
         self.sidebar_icon_size = int(self.height * 0.22)
@@ -40,12 +51,19 @@ class Dashboard:
         self.sidebar_anim_progress = 0.0
         self.sidebar_anim_speed = 0.8
 
+        self.sidebar_icon_variant_cache = {}
+
         sidebar_icon_files = {
             "gauge": "assets/images/gauge.png",
             "system": "assets/images/system.png",
             "gps": "assets/images/gps.png",
             "music": "assets/images/music.png",
         }
+
+        self.sidebar_gradient = self.create_sidebar_gradient()
+
+        self.render_call_count = 0
+        self.render_count_started = time.perf_counter()
 
         for name, filename in sidebar_icon_files.items():
             image = pygame.image.load(filename).convert_alpha()
@@ -73,6 +91,10 @@ class Dashboard:
         self.sidebar_selected_index = 0
         self.sidebar_options = ["gauge", "system", "gps", "music"]
 
+        self.left_hold_start = None
+        self.left_hold_seconds = 3.0
+        self.left_hold_consumed = False
+
         self.right_hold_start = None
         self.right_hold_seconds = 3.0
         self.right_hold_consumed = False
@@ -82,12 +104,34 @@ class Dashboard:
     def get_music_screen(self):
         return self.screens.get("music")
 
+    def is_music_drawer_open(self):
+        music_screen = self.get_music_screen()
+
+        return (
+            self.current_screen_name == "music"
+            and not self.split_mode
+            and music_screen is not None
+            and getattr(music_screen, "drawer_open", False)
+        )
+
+    def can_open_music_drawer(self):
+        music_screen = self.get_music_screen()
+
+        return (
+            self.current_screen_name == "music"
+            and not self.split_mode
+            and music_screen is not None
+            and music_screen.mode == "now_playing"
+            and not music_screen.drawer_open
+        )
+
     def can_open_sidebar(self):
         return (
             self.current_screen_name != "main_menu"
             and not self.split_mode
             and not self.sidebar_open
-        )
+            and not self.is_music_drawer_open()
+        ) 
 
     def select_main_menu_option(self):
         selected = self.main_menu.get_selected_screen()
@@ -119,6 +163,43 @@ class Dashboard:
 
         self.split_mode = True
         self.sidebar_open = False
+
+    def create_sidebar_gradient(self):
+        gradient_w = int(self.width * 0.35)
+
+        # No SRCALPHA: regular RGB surface.
+        gradient = pygame.Surface(
+            (gradient_w, self.height)
+        ).convert()
+
+        for x in range(gradient_w):
+            progress = x / max(1, gradient_w - 1)
+
+            # 255 means unchanged.
+            # Lower values darken the underlying pixels.
+            multiplier = int(
+                255 - 185 * (progress ** 1.2)
+            )
+
+            pygame.draw.line(
+                gradient,
+                (multiplier, multiplier, multiplier),
+                (x, 0),
+                (x, self.height)
+            )
+
+        return gradient 
+    
+    def handle_left_tap(self):
+        music_screen = self.get_music_screen()
+
+        if (
+            self.current_screen_name == "music"
+            and not self.split_mode
+            and music_screen is not None
+            and music_screen.mode == "now_playing"
+        ):
+            music_screen.handle_key(pygame.K_LEFT)
 
     def handle_right_tap(self):
         if (
@@ -152,20 +233,33 @@ class Dashboard:
         return False
 
     def handle_keyup(self, key):
-        if key != pygame.K_RIGHT:
+        if key == pygame.K_RIGHT:
+            if self.right_hold_consumed:
+                self.right_hold_consumed = False
+                self.right_hold_start = None
+                return
+
+            if self.right_hold_start is not None:
+                held_time = time.time() - self.right_hold_start
+                self.right_hold_start = None
+
+                if held_time < self.right_hold_seconds:
+                    self.handle_right_tap()
+
             return
 
-        if self.right_hold_consumed:
-            self.right_hold_consumed = False
-            self.right_hold_start = None
-            return
+        if key == pygame.K_LEFT:
+            if self.left_hold_consumed:
+                self.left_hold_consumed = False
+                self.left_hold_start = None
+                return
 
-        if self.right_hold_start is not None:
-            held_time = time.time() - self.right_hold_start
-            self.right_hold_start = None
+            if self.left_hold_start is not None:
+                held_time = time.time() - self.left_hold_start
+                self.left_hold_start = None
 
-            if held_time < self.right_hold_seconds:
-                self.handle_right_tap()
+                if held_time < self.left_hold_seconds:
+                    self.handle_left_tap() 
 
 
     def handle_keydown(self, key):
@@ -174,6 +268,14 @@ class Dashboard:
             return
 
         music_screen = self.get_music_screen()
+
+        if music_screen and music_screen.drawer_open:
+            # The Music drawer owns all navigation while open.
+            self.left_hold_start = None
+            self.right_hold_start = None
+
+            music_screen.handle_key(key)
+            return 
 
         if music_screen and key == pygame.K_w:
             music_screen.player.increase_volume()
@@ -185,9 +287,19 @@ class Dashboard:
             self.volume_overlay.show()
             return
 
+        if key == pygame.K_F3:
+            self.debug_overlay_enabled = not self.debug_overlay_enabled
+            return
+        
+
         # RIGHT is special because tap = app action, hold = sidebar.
         # So we do not route RIGHT on keydown.
-        if key != pygame.K_RIGHT:
+        is_music_left_hold = (
+            key == pygame.K_LEFT
+            and self.can_open_music_drawer()
+        )
+
+        if key != pygame.K_RIGHT and not is_music_left_hold:
             if self.route_to_current_screen(key):
                 return
 
@@ -212,10 +324,16 @@ class Dashboard:
                     self.right_hold_consumed = False
 
         elif key == pygame.K_LEFT:
-            if self.current_screen_name == "main_menu" and not self.split_mode:
+            if self.can_open_music_drawer():
+                if self.left_hold_start is None:
+                    self.left_hold_start = time.time()
+                    self.left_hold_consumed = False
+
+            elif self.current_screen_name == "main_menu" and not self.split_mode:
                 self.main_menu.move_left()
+
             elif self.split_mode:
-                self.focus_side = "left"
+                self.focus_side = "left" 
 
         elif key == pygame.K_UP:
             if self.current_screen_name == "main_menu":
@@ -293,30 +411,78 @@ class Dashboard:
             if event.type == pygame.QUIT:
                 self.running = False
 
+            elif event.type == MUSIC_ENDED:
+                music_screen = self.get_music_screen()
+
+                if music_screen and hasattr(music_screen, "handle_song_finished"):
+                    music_screen.handle_song_finished()
+
+                continue
+
             elif event.type == pygame.KEYUP:
                 self.handle_keyup(event.key)
 
             elif event.type == pygame.KEYDOWN:
                 self.handle_keydown(event.key)
 
+
     def update_long_press(self):
         keys = pygame.key.get_pressed()
 
-        if keys[pygame.K_RIGHT] and self.can_open_sidebar():
-            if self.right_hold_start is None:
-                self.right_hold_start = time.time()
+        # ---------------------------------------------------------
+        # LEFT hold: open the Music options drawer
+        # ---------------------------------------------------------
+        if not keys[pygame.K_LEFT]:
+            self.left_hold_start = None
+
+        elif self.can_open_music_drawer():
+            if self.left_hold_start is None:
+                self.left_hold_start = time.time()
+                self.left_hold_consumed = False
+
+            held_time = time.time() - self.left_hold_start
+
+            if held_time >= self.left_hold_seconds:
+                music_screen = self.get_music_screen()
+
+                if music_screen is not None:
+                    music_screen.drawer_open = True
+                    music_screen.drawer_icon_index = 0
+
+                self.left_hold_consumed = True
+                self.left_hold_start = None
+
+                # Cancel any simultaneous right-sidebar attempt.
+                self.right_hold_start = None
                 self.right_hold_consumed = False
 
-            held_time = time.time() - self.right_hold_start
-
-            if held_time >= self.right_hold_seconds:
-                self.sidebar_open = True
-                self.sidebar_anim_progress = 0.0
-                self.right_hold_consumed = True
-                self.right_hold_start = None
         else:
-            if not keys[pygame.K_RIGHT]:
-                self.right_hold_start = None
+            self.left_hold_start = None
+
+        # ---------------------------------------------------------
+        # RIGHT hold: open the Dashboard split-screen sidebar
+        # ---------------------------------------------------------
+        if not keys[pygame.K_RIGHT]:
+            self.right_hold_start = None
+            return
+
+        if not self.can_open_sidebar():
+            self.right_hold_start = None
+            self.right_hold_consumed = False
+            return
+
+        if self.right_hold_start is None:
+            self.right_hold_start = time.time()
+            self.right_hold_consumed = False
+
+        held_time = time.time() - self.right_hold_start
+
+        if held_time >= self.right_hold_seconds:
+            self.sidebar_open = True
+            self.sidebar_anim_progress = 0.0
+            self.right_hold_consumed = True
+            self.right_hold_start = None 
+
 
     def update_sidebar_animation(self):
         target = float(self.sidebar_selected_index)
@@ -425,23 +591,13 @@ class Dashboard:
         slide_offset = int(sidebar_w * (1.0 - ease))
         x += slide_offset
 
-        gradient_w = int(self.width * 0.35)
-        gradient_x = self.width - gradient_w
+        gradient_x = self.width - self.sidebar_gradient.get_width()
+        self.screen.blit(
+            self.sidebar_gradient,
+            (gradient_x, 0),
+            special_flags=pygame.BLEND_RGB_MULT
+        )
 
-        gradient = pygame.Surface((gradient_w, self.height), pygame.SRCALPHA)
-
-        for i in range(gradient_w):
-            t = i / gradient_w
-            alpha = int(185 * (t ** 1.2))
-
-            pygame.draw.line(
-                gradient,
-                (0, 0, 0, alpha),
-                (i, 0),
-                (i, self.height)
-            )
-
-        self.screen.blit(gradient, (gradient_x, 0))
 
         center_x = x + sidebar_w * 0.5
         center_y = self.height * 0.50
@@ -466,15 +622,21 @@ class Dashboard:
             scale = 0.70 + 0.30 * closeness
             alpha = int(120 + 135 * closeness)
 
-            base_icon = self.sidebar_icons[screen_name]
-            icon_size = int(self.sidebar_icon_size * scale)
+            icon_size = int(
+                self.sidebar_icon_size * scale
+            )
 
-            icon = self.get_sidebar_icon(screen_name, icon_size).copy()
-            icon.set_alpha(alpha)
+            icon = self.get_sidebar_icon_variant(
+                screen_name,
+                icon_size,
+                alpha
+            )
 
-            icon_rect = icon.get_rect(center=(center_x, y))
+            icon_rect = icon.get_rect(
+                center=(center_x, y)
+            )
 
-            self.screen.blit(icon, icon_rect)
+            self.screen.blit(icon, icon_rect) 
 
 
     def render_long_press_progress(self):
@@ -504,6 +666,54 @@ class Dashboard:
             pygame.Rect(x, y, fill_w, bar_h)
         )
 
+    def render_debug_overlay(self):
+        if not self.debug_overlay_enabled:
+            return
+
+        now = time.perf_counter()
+
+        if (
+            self.debug_surface is None
+            or now - self.debug_last_update >= 0.5
+        ):
+            fps = self.clock.get_fps()
+            frame_ms = 1000.0 / fps if fps > 0 else 0.0
+
+            self.debug_fps_text = (
+                "FPS: {:.1f}   FRAME: {:.1f} ms   SCREEN: {}"
+            ).format(
+                fps,
+                frame_ms,
+                self.current_screen_name
+            )
+
+            self.debug_surface = self.debug_font.render(
+                self.debug_fps_text,
+                True,
+                (255, 255, 255)
+            )
+
+            self.debug_last_update = now
+
+        padding = 8
+
+        background = pygame.Rect(
+            8,
+            self.height - self.debug_surface.get_height() - padding * 2 - 8,
+            self.debug_surface.get_width() + padding * 2,
+            self.debug_surface.get_height() + padding * 2
+        )
+
+        pygame.draw.rect(self.screen, (0, 0, 0), background)
+
+        self.screen.blit(
+            self.debug_surface,
+            (
+                background.left + padding,
+                background.top + padding
+            )
+        )
+
     def render_overlays(self):
         if self.sidebar_open:
             self.render_sidebar()
@@ -518,15 +728,18 @@ class Dashboard:
                 music_screen.player.get_volume_percent()
             )
 
+        self.render_debug_overlay()
+ 
     def render(self, state):
         self.handle_events()
-        self.update()
 
         self.screen.fill((15, 15, 18))
 
+        self.render_debug_overlay()
+
+        self.update()
         self.render_active_screen(state)
         self.render_overlays()
-
 
         pygame.display.flip()
         self.clock.tick(30)
@@ -541,6 +754,34 @@ class Dashboard:
             )
 
         return self.sidebar_scaled_icons[key]
+
+    def get_sidebar_icon_variant(
+        self,
+        screen_name,
+        icon_size,
+        alpha
+    ):
+        # Quantize values so animation does not create unlimited cache entries.
+        icon_size = max(1, int(round(icon_size / 4.0) * 4))
+        alpha = max(0, min(255, int(round(alpha / 16.0) * 16)))
+
+        key = (
+            screen_name,
+            icon_size,
+            alpha
+        )
+
+        if key not in self.sidebar_icon_variant_cache:
+            icon = self.get_sidebar_icon(
+                screen_name,
+                icon_size
+            ).copy()
+
+            icon.set_alpha(alpha)
+
+            self.sidebar_icon_variant_cache[key] = icon
+
+        return self.sidebar_icon_variant_cache[key] 
 
 
     def route_to_current_screen(self, key):

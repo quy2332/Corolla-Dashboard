@@ -1,6 +1,8 @@
 import os
 import json
 import pygame
+import time
+import random
 
 from music.library import MusicLibrary
 from music.player import MusicPlayer
@@ -10,6 +12,14 @@ class MusicScreen:
     def __init__(self, width, height):
         self.width = width
         self.height = height
+
+        self.dark_overlay = pygame.Surface(
+            (self.width, self.height),
+            pygame.SRCALPHA
+        )
+        self.dark_overlay.fill((0, 0, 0, 165))
+
+        self.background_cache = {}
 
         self.library = MusicLibrary()
         self.player = MusicPlayer(volume=0.50)
@@ -22,6 +32,9 @@ class MusicScreen:
         self.home_selected_index = 0
         self.playlist_selected_index = 0
         self.active_playlist_tag = None
+
+        self.play_queue = []
+        self.play_queue_index = 0
 
         self.finished_handled = False
 
@@ -53,34 +66,80 @@ class MusicScreen:
             "assets/fonts/roboto.ttf",
             int(height * 0.026)
         )
-        self.options_title_font = pygame.font.Font(
-            "assets/fonts/rajdhani-bold.ttf",
-            int(height * 0.050)
-        )
-        self.options_font = pygame.font.Font(
-            "assets/fonts/roboto.ttf",
-            int(height * 0.034)
-        )
+
 
         self.image_cache = {}
 
         self.config_path = "config/music.json"
         self.music_settings = self.load_music_settings()
 
-        self.options_open = False
-        self.options_selected_index = 0
-        self.options_items = [
-            "repeat_mode",
+        self.drawer_open = False
+
+        self.drawer_progress = 0.0
+        self.drawer_speed = 0.12
+
+        self.drawer_section = "icons"
+
+        self.drawer_icon_index = 0
+        self.drawer_queue_index = 0
+
+        # A queued selection is played only after the current track ends.
+        self.pending_queue_index = None
+
+        # Long-hold navigation for jumping to the queue boundaries.
+        self.drawer_hold_key = None
+        self.drawer_hold_start = None
+        self.drawer_hold_consumed = False
+        self.drawer_hold_seconds = 2.0
+
+        self.drawer_icons = [
+            "repeat",
             "shuffle",
-            "playback_speed",
-            "close",
+            "speed",
+            "favorite"
         ]
+
+        self.now_playing_static_surface = None
+        self.now_playing_static_song = None
+        self.now_playing_static_size = None
+
+        self.music_icon_sheet = pygame.image.load(
+            "assets/images/music_options.png"
+        ).convert_alpha()
+
+        self.music_icons = {}
+
+        icon_rects = {
+            "repeat": pygame.Rect(0, 0, 250, 250),
+            "repeat_one": pygame.Rect(250, 0, 250, 250),
+            "shuffle": pygame.Rect(0, 250, 250, 250),
+            "favorite": pygame.Rect(250, 250, 250, 250),
+        }
+
+        for name, source_rect in icon_rects.items():
+            icon = pygame.Surface(
+                source_rect.size,
+                pygame.SRCALPHA
+            )
+
+            icon.blit(
+                self.music_icon_sheet,
+                (0, 0),
+                source_rect
+            )
+
+            self.music_icons[name] = icon
+
+        self.music_scaled_icon_cache = {}
+
+
 
     def load_music_settings(self):
         default_settings = {
             "repeat_mode": "off",
             "shuffle": False,
             "playback_speed": 1.0,
+            "favorites": [],
         }
 
         if not os.path.exists(self.config_path):
@@ -97,6 +156,13 @@ class MusicScreen:
                 settings["repeat_mode"] = "off"
 
             settings["shuffle"] = bool(settings["shuffle"])
+
+            if not isinstance(settings.get("favorites"), list):
+                settings["favorites"] = []
+            else:
+                settings["favorites"] = [
+                    str(path) for path in settings["favorites"]
+                ]
 
             if settings["playback_speed"] not in (0.75, 1.0, 1.25, 1.5):
                 settings["playback_speed"] = 1.0
@@ -136,30 +202,57 @@ class MusicScreen:
         self.image_cache[cache_key] = image
         return image
 
+    def get_scaled_music_icon(self, name, size):
+        key = (name, size)
+
+        if key not in self.music_scaled_icon_cache:
+            self.music_scaled_icon_cache[key] = (
+                pygame.transform.smoothscale(
+                    self.music_icons[name],
+                    (size, size)
+                )
+            )
+
+        return self.music_scaled_icon_cache[key]
+
     def format_time(self, seconds):
         minutes = seconds // 60
         seconds = seconds % 60
         return "{}:{:02d}".format(minutes, seconds)
 
     def draw_dark_overlay(self, screen):
-        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 165))
-        screen.blit(overlay, (0, 0))
+        screen.blit(self.dark_overlay, (0, 0))
 
     def draw_background(self, screen, song):
         w, h = screen.get_size()
 
         bg_path = song.artist_image_path or song.image_path
         if bg_path is None:
+            screen.fill((15, 15, 18))
             return
 
-        bg = self.load_image(bg_path, (w, w))
-        if bg is None:
-            return
+        cache_key = (bg_path, w, h)
 
-        y = int((h - w) / 2)
-        screen.blit(bg, (0, y))
-        self.draw_dark_overlay(screen)
+        if cache_key not in self.background_cache:
+            bg = self.load_image(bg_path, (w, w))
+
+            if bg is None:
+                screen.fill((15, 15, 18))
+                return
+
+            cached_background = pygame.Surface((w, h)).convert()
+            cached_background.fill((15, 15, 18))
+
+            y = int((h - w) / 2)
+            cached_background.blit(bg, (0, y))
+
+            dark_overlay = pygame.Surface((w, h), pygame.SRCALPHA)
+            dark_overlay.fill((0, 0, 0, 165))
+            cached_background.blit(dark_overlay, (0, 0))
+
+            self.background_cache[cache_key] = cached_background
+
+        screen.blit(self.background_cache[cache_key], (0, 0))
 
     def draw_placeholder_art(self, screen, rect):
         pygame.draw.rect(screen, (35, 35, 42), rect)
@@ -236,21 +329,93 @@ class MusicScreen:
         pygame.draw.rect(screen, (60, 60, 70), pygame.Rect(x, y, bar_w, bar_h))
         pygame.draw.rect(screen, (235, 235, 245), pygame.Rect(x, y, fill_w, bar_h))
 
+    def invalidate_now_playing_cache(self):
+        self.now_playing_static_surface = None
+        self.now_playing_static_song = None
+        self.now_playing_static_size = None
+
+    def build_now_playing_static_surface(self, song, size):
+        w, h = size
+
+        surface = pygame.Surface((w, h)).convert()
+        self.draw_background(surface, song)
+
+        art_size = int(min(w, h) * 0.39)
+        art_rect = pygame.Rect(0, 0, art_size, art_size)
+        art_rect.center = (w * 0.5, h * 0.37)
+
+        cover = self.load_image(song.image_path, (art_size, art_size))
+
+        if cover:
+            surface.blit(cover, art_rect)
+            pygame.draw.rect(surface, (220, 220, 230), art_rect, 2)
+        else:
+            self.draw_placeholder_art(surface, art_rect)
+
+        self.draw_multiline_text(
+            surface,
+            song.title,
+            self.title_font,
+            h * 0.665,
+            (255, 255, 255)
+        )
+
+        self.draw_centered_text(
+            surface,
+            song.artist,
+            self.artist_font,
+            h * 0.745,
+            (185, 185, 195)
+        )
+
+        track_text = "TRACK {} / {}".format(
+            self.library.current_index + 1,
+            len(self.library.songs)
+        )
+
+        self.draw_centered_text(
+            surface,
+            track_text,
+            self.meta_font,
+            h * 0.775,
+            (135, 135, 145)
+        )
+
+        return surface
+
     def next_song(self):
-        song = self.library.next_song()
-        self.player.load(song)
-        self.finished_handled = False
-        self.player.play()
+        if not self.play_queue:
+            self.play_queue = self.library.songs
+            self.play_queue_index = self.library.current_index
+
+        self.play_queue_index = (self.play_queue_index + 1) % len(self.play_queue)
+        song = self.play_queue[self.play_queue_index]
+        self.play_song(song, self.play_queue, self.play_queue_index)
+
 
     def previous_song(self):
-        song = self.library.previous_song()
-        self.player.load(song)
-        self.finished_handled = False
-        self.player.play()
+        if not self.play_queue:
+            self.play_queue = self.library.songs
+            self.play_queue_index = self.library.current_index
 
-    def play_song(self, song):
+        self.play_queue_index = (self.play_queue_index - 1) % len(self.play_queue)
+        song = self.play_queue[self.play_queue_index]
+        self.play_song(song, self.play_queue, self.play_queue_index)
+
+
+    def play_song(self, song, queue=None, queue_index=0):
         if song is None:
             return
+
+        if queue is None:
+            self.play_queue = self.library.songs
+            try:
+                self.play_queue_index = self.library.songs.index(song)
+            except ValueError:
+                self.play_queue_index = 0
+        else:
+            self.play_queue = queue
+            self.play_queue_index = queue_index
 
         try:
             self.library.current_index = self.library.songs.index(song)
@@ -258,16 +423,11 @@ class MusicScreen:
             pass
 
         self.player.load(song)
-        self.finished_handled = False
+        self.invalidate_now_playing_cache()
         self.player.play()
         self.mode = "now_playing"
 
     def play_playlist_song(self):
-        items = self.playlist_items()
-
-        if self.active_playlist_tag is None:
-            return
-
         playlist = self.library.playlists.get(self.active_playlist_tag)
         if not playlist:
             return
@@ -277,7 +437,12 @@ class MusicScreen:
             return
 
         self.playlist_selected_index %= len(songs)
-        self.play_song(songs[self.playlist_selected_index])
+
+        self.play_song(
+            songs[self.playlist_selected_index],
+            queue=songs,
+            queue_index=self.playlist_selected_index,
+        )
 
     def open_home_selection(self):
         if self.home_selected_index == 0:
@@ -307,6 +472,48 @@ class MusicScreen:
 
     def toggle_shuffle(self):
         self.music_settings["shuffle"] = not self.music_settings["shuffle"]
+
+        # When shuffle is enabled, rearrange the current queue while keeping
+        # the current song in place. Disabling shuffle affects future queues;
+        # it does not unexpectedly jump away from the current song.
+        if self.music_settings["shuffle"] and self.play_queue:
+            current_song = self.play_queue[self.play_queue_index]
+            remaining = [
+                song for index, song in enumerate(self.play_queue)
+                if index != self.play_queue_index
+            ]
+            random.shuffle(remaining)
+            self.play_queue = [current_song] + remaining
+            self.play_queue_index = 0
+
+        self.save_music_settings()
+
+    def current_song_key(self):
+        song = self.library.current_song()
+        if song is None:
+            return None
+
+        return getattr(song, "audio_path", None)
+
+    def is_current_song_favorite(self):
+        song_key = self.current_song_key()
+        return (
+            song_key is not None
+            and song_key in self.music_settings["favorites"]
+        )
+
+    def toggle_current_favorite(self):
+        song_key = self.current_song_key()
+        if song_key is None:
+            return
+
+        favorites = self.music_settings["favorites"]
+
+        if song_key in favorites:
+            favorites.remove(song_key)
+        else:
+            favorites.append(song_key)
+
         self.save_music_settings()
 
     def cycle_playback_speed(self, direction):
@@ -317,63 +524,19 @@ class MusicScreen:
         index = (index + direction) % len(speeds)
 
         self.music_settings["playback_speed"] = speeds[index]
+
+        # Pygame mixer does not natively provide playback-rate control. This
+        # call makes the UI ready for a future player backend that supports it.
+        if hasattr(self.player, "set_playback_speed"):
+            self.player.set_playback_speed(
+                self.music_settings["playback_speed"]
+            )
+
         self.save_music_settings()
 
-    def handle_options_key(self, key):
-        if key == pygame.K_ESCAPE:
-            self.options_open = False
-            return True
-
-        if key == pygame.K_RETURN:
-            selected = self.options_items[self.options_selected_index]
-
-            if selected == "close":
-                self.options_open = False
-            else:
-                self.options_open = False
-
-            return True
-
-        if key == pygame.K_UP:
-            self.options_selected_index = (
-                self.options_selected_index - 1
-            ) % len(self.options_items)
-            return True
-
-        if key == pygame.K_DOWN:
-            self.options_selected_index = (
-                self.options_selected_index + 1
-            ) % len(self.options_items)
-            return True
-
-        if key == pygame.K_LEFT:
-            self.change_selected_option(-1)
-            return True
-
-        if key == pygame.K_RIGHT:
-            self.change_selected_option(1)
-            return True
-
-        return False
-
-    def change_selected_option(self, direction):
-        selected = self.options_items[self.options_selected_index]
-
-        if selected == "repeat_mode":
-            self.cycle_repeat_mode(direction)
-
-        elif selected == "shuffle":
-            self.toggle_shuffle()
-
-        elif selected == "playback_speed":
-            self.cycle_playback_speed(direction)
-
-        elif selected == "close":
-            self.options_open = False
-
     def handle_key(self, key):
-        if self.options_open:
-            return self.handle_options_key(key)
+        if self.drawer_open:
+            return self.handle_drawer_key(key)
 
         if self.mode == "home":
             return self.handle_home_key(key)
@@ -442,11 +605,8 @@ class MusicScreen:
 
         return False
 
-    def handle_now_playing_key(self, key):
-        if key == pygame.K_UP:
-            self.options_open = True
-            return True
 
+    def handle_now_playing_key(self, key):
         if key == pygame.K_SPACE:
             self.player.toggle_play_pause()
             return True
@@ -465,28 +625,25 @@ class MusicScreen:
 
         return False
 
-    def update(self):
-        if self.mode != "now_playing":
-            return
-
-        song = self.library.current_song()
-
-        if song is None:
-            return
-
-        if not self.player.has_started:
-            return
-
-        if self.finished_handled:
-            return
-
-        current = self.player.get_position_seconds()
-
-        if current >= max(1, song.duration - 1):
-            self.finished_handled = True
-            self.handle_song_finished()
 
     def handle_song_finished(self):
+        # A manually queued track takes priority over repeat behavior.
+        if self.pending_queue_index is not None:
+            queue = self.get_drawer_queue()
+
+            if queue:
+                target_index = max(
+                    0,
+                    min(self.pending_queue_index, len(queue) - 1)
+                )
+                song = queue[target_index]
+                self.pending_queue_index = None
+                self.finished_handled = False
+                self.play_song(song, queue, target_index)
+                return
+
+            self.pending_queue_index = None
+
         repeat_mode = self.music_settings["repeat_mode"]
 
         if repeat_mode == "song":
@@ -494,99 +651,527 @@ class MusicScreen:
             self.player.load(song)
             self.finished_handled = False
             self.player.play()
+            return
 
-        elif repeat_mode == "playlist":
+        if repeat_mode == "playlist":
+            self.finished_handled = False
             self.next_song()
+            return
 
+        self.player.stop()
+
+
+
+    def get_drawer_playlist_name(self):
+        if self.active_playlist_tag:
+            playlist = self.library.playlists.get(self.active_playlist_tag)
+            if playlist:
+                return playlist.get("display_name", self.active_playlist_tag)
+
+        return "ALL SONGS"
+
+    def fit_text(self, text, font, max_width):
+        text = str(text)
+
+        if font.size(text)[0] <= max_width:
+            return text
+
+        ellipsis = "..."
+        trimmed = text
+
+        while trimmed and font.size(trimmed + ellipsis)[0] > max_width:
+            trimmed = trimmed[:-1]
+
+        return trimmed.rstrip() + ellipsis
+
+    def get_drawer_queue(self):
+        return self.play_queue if self.play_queue else self.library.songs
+
+    def get_current_queue_index(self):
+        queue = self.get_drawer_queue()
+        if not queue:
+            return 0
+
+        if self.play_queue:
+            return self.play_queue_index % len(queue)
+
+        return self.library.current_index % len(queue)
+
+    def enter_drawer_queue(self):
+        queue = self.get_drawer_queue()
+        if not queue:
+            return
+
+        self.drawer_section = "queue"
+        self.drawer_queue_index = self.get_current_queue_index()
+        self.clear_drawer_hold()
+
+    def clear_drawer_hold(self):
+        self.drawer_hold_key = None
+        self.drawer_hold_start = None
+        self.drawer_hold_consumed = False
+
+    def begin_drawer_hold(self, key):
+        self.drawer_hold_key = key
+        self.drawer_hold_start = time.time()
+        self.drawer_hold_consumed = False
+
+    def queue_selected_song(self):
+        queue = self.get_drawer_queue()
+        if not queue:
+            return
+
+        self.pending_queue_index = max(
+            0,
+            min(self.drawer_queue_index, len(queue) - 1)
+        )
+
+    def get_drawer_queue_preview(self):
+        queue = self.get_drawer_queue()
+
+        if not queue:
+            return [], 0, 0
+
+        current_index = self.get_current_queue_index()
+
+        if self.drawer_section == "queue":
+            selected_index = max(
+                0,
+                min(self.drawer_queue_index, len(queue) - 1)
+            )
         else:
-            self.player.stop()
+            selected_index = current_index
 
-    def get_option_display_value(self, option):
-        if option == "repeat_mode":
-            return self.music_settings["repeat_mode"].upper()
+        preview = []
 
-        if option == "shuffle":
-            return "ON" if self.music_settings["shuffle"] else "OFF"
+        # Keep the selected item in the middle row. At playlist boundaries,
+        # missing rows are represented by None instead of wrapping around.
+        for offset in (-2, -1, 0, 1, 2):
+            index = selected_index + offset
+            song = queue[index] if 0 <= index < len(queue) else None
+            preview.append((offset, index, song))
 
-        if option == "playback_speed":
-            return "{:.2g}x".format(self.music_settings["playback_speed"])
+        return preview, selected_index, len(queue)
 
-        if option == "close":
-            return ""
+    def handle_drawer_key(self, key):
 
-        return ""
+        if key == pygame.K_ESCAPE:
+            self.drawer_open = False
+            self.drawer_section = "icons"
+            self.clear_drawer_hold()
+            return True
 
-    def get_option_label(self, option):
-        labels = {
-            "repeat_mode": "REPEAT",
-            "shuffle": "SHUFFLE",
-            "playback_speed": "SPEED",
-            "close": "CLOSE",
-        }
-        return labels.get(option, option.upper())
+        if self.drawer_section == "icons":
+            if key == pygame.K_LEFT:
+                self.drawer_icon_index = (
+                    self.drawer_icon_index - 1
+                ) % len(self.drawer_icons)
+                return True
 
-    def draw_options_overlay(self, screen):
-        if not self.options_open:
+            if key == pygame.K_RIGHT:
+                self.drawer_icon_index = (
+                    self.drawer_icon_index + 1
+                ) % len(self.drawer_icons)
+                return True
+
+            if key == pygame.K_DOWN:
+                self.enter_drawer_queue()
+                return True
+
+            if key == pygame.K_RETURN:
+                selected = self.drawer_icons[self.drawer_icon_index]
+
+                if selected == "repeat":
+                    self.cycle_repeat_mode(1)
+
+                elif selected == "shuffle":
+                    self.toggle_shuffle()
+
+                elif selected == "speed":
+                    self.cycle_playback_speed(1)
+
+                elif selected == "favorite":
+                    self.toggle_current_favorite()
+
+                return True
+
+        elif self.drawer_section == "queue":
+            queue = self.get_drawer_queue()
+
+            if not queue:
+                if key == pygame.K_UP:
+                    self.drawer_section = "icons"
+                return True
+
+            if key == pygame.K_UP:
+                if self.drawer_queue_index <= 0:
+                    self.drawer_queue_index = 0
+                    self.drawer_section = "icons"
+                    self.clear_drawer_hold()
+                else:
+                    self.drawer_queue_index -= 1
+                    self.begin_drawer_hold(key)
+                return True
+
+            if key == pygame.K_DOWN:
+                if self.drawer_queue_index < len(queue) - 1:
+                    self.drawer_queue_index += 1
+                    self.begin_drawer_hold(key)
+                return True
+
+            if key == pygame.K_RETURN:
+                self.queue_selected_song()
+                return True
+
+            # LEFT and RIGHT intentionally do nothing in queue navigation.
+            return True
+
+        return True
+
+    def draw_music_drawer(self, screen):
+        if self.drawer_progress <= 0:
             return
 
         w, h = screen.get_size()
 
-        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 175))
-        screen.blit(overlay, (0, 0))
+        drawer_w = int(w * 0.32)
 
-        panel_w = w * 0.48
-        panel_h = h * 0.44
-        panel = pygame.Rect(0, 0, panel_w, panel_h)
-        panel.center = (w * 0.5, h * 0.52)
+        x = int(
+            -drawer_w
+            + drawer_w * self.drawer_progress
+        )
 
-        pygame.draw.rect(screen, (22, 22, 28), panel)
-        pygame.draw.rect(screen, (180, 180, 190), panel, 2)
+        rect = pygame.Rect(
+            x,
+            0,
+            drawer_w,
+            h
+        )
 
-        title = self.options_title_font.render(
-            "MUSIC OPTIONS",
+        pygame.draw.rect(
+            screen,
+            (20, 20, 24),
+            rect
+        )
+
+        pygame.draw.line(
+            screen,
+            (80, 80, 90),
+            (rect.right, 0),
+            (rect.right, h),
+            2
+        )
+
+        icon_size = 48
+        icon_y = rect.top + int(h * 0.17)
+
+        repeat_x_offset = 0
+        shuffle_x_offset = -10
+        speed_x_offset = 0
+        favorite_x_offset = 0
+
+        repeat_y_offset = 0
+        shuffle_y_offset = 5
+        speed_y_offset = 5
+        favorite_y_offset = 5
+
+        slot_count = 4
+        slot_width = drawer_w / slot_count
+
+        slot_centers = [
+            rect.left + slot_width * (index + 0.5)
+            for index in range(slot_count)
+        ]
+
+        repeat_mode = self.music_settings["repeat_mode"]
+        repeat_icon_name = (
+            "repeat_one" if repeat_mode == "song" else "repeat"
+        )
+
+        repeat_icon = self.get_scaled_music_icon(
+            repeat_icon_name,
+            icon_size
+        )
+
+        shuffle_icon = self.get_scaled_music_icon(
+            "shuffle",
+            icon_size
+        )
+
+        favorite_icon = self.get_scaled_music_icon(
+            "favorite",
+            icon_size
+        )
+
+        speed_font = pygame.font.Font(
+            "assets/fonts/rajdhani-bold.ttf",
+            int(self.control_font.get_height() * 0.5)
+        )
+
+        speed_label = "{:.2f}x".format(
+            self.music_settings["playback_speed"]
+        )
+
+        speed_surface = speed_font.render(
+            speed_label,
             True,
             (245, 245, 245)
         )
-        screen.blit(title, title.get_rect(center=(panel.centerx, panel.top + h * 0.075)))
 
-        start_y = panel.top + h * 0.16
-        gap = h * 0.065
-
-        for i, option in enumerate(self.options_items):
-            y = start_y + i * gap
-            selected = i == self.options_selected_index
-
-            label_color = (255, 255, 255) if selected else (150, 150, 160)
-            value_color = (255, 255, 255) if selected else (150, 150, 160)
-
-            label = self.get_option_label(option)
-            value = self.get_option_display_value(option)
-
-            label_surface = self.options_font.render(label, True, label_color)
-            value_surface = self.options_font.render(value, True, value_color)
-
-            label_x = panel.left + panel_w * 0.16
-            value_x = panel.right - panel_w * 0.16
-
-            if selected:
-                highlight_rect = pygame.Rect(
-                    panel.left + panel_w * 0.08,
-                    y - h * 0.028,
-                    panel_w * 0.84,
-                    h * 0.056
-                )
-                pygame.draw.rect(screen, (45, 45, 55), highlight_rect)
-
-            screen.blit(label_surface, label_surface.get_rect(midleft=(label_x, y)))
-            screen.blit(value_surface, value_surface.get_rect(midright=(value_x, y)))
-
-        hint = self.meta_font.render(
-            "UP/DOWN SELECT   LEFT/RIGHT CHANGE   ENTER CLOSE",
-            True,
-            (115, 115, 125)
+        # Build each option rect first so the underline can follow the
+        # actual rendered width and position of the selected option.
+        repeat_rect = repeat_icon.get_rect(
+            center=(
+                slot_centers[0] + repeat_x_offset,
+                icon_y + repeat_y_offset
+            )
         )
-        screen.blit(hint, hint.get_rect(center=(panel.centerx, panel.bottom - h * 0.055)))
+
+        shuffle_rect = shuffle_icon.get_rect(
+            center=(
+                slot_centers[1] + shuffle_x_offset,
+                icon_y + shuffle_y_offset
+            )
+        )
+
+        speed_rect = speed_surface.get_rect(
+            center=(
+                slot_centers[2] + speed_x_offset,
+                icon_y + speed_y_offset
+            )
+        )
+
+        favorite_rect = favorite_icon.get_rect(
+            center=(
+                slot_centers[3] + favorite_x_offset,
+                icon_y + favorite_y_offset
+            )
+        )
+
+        repeat_draw = repeat_icon.copy()
+        shuffle_draw = shuffle_icon.copy()
+        favorite_draw = favorite_icon.copy()
+
+        if repeat_mode == "off":
+            repeat_draw.set_alpha(105)
+
+        if not self.music_settings["shuffle"]:
+            shuffle_draw.set_alpha(105)
+
+        if not self.is_current_song_favorite():
+            favorite_draw.set_alpha(105)
+
+        screen.blit(repeat_draw, repeat_rect)
+        screen.blit(shuffle_draw, shuffle_rect)
+        screen.blit(speed_surface, speed_rect)
+        screen.blit(favorite_draw, favorite_rect)
+
+        option_rects = [
+            repeat_rect,
+            shuffle_rect,
+            speed_rect,
+            favorite_rect,
+        ]
+
+        # Independent underline widths make it easy to tune each option.
+        # Speed is intentionally wider because its text is wider than an icon.
+        repeat_underline_width = 30
+        shuffle_underline_width = 30
+        speed_underline_width = speed_rect.width
+        favorite_underline_width = 30
+
+        underline_widths = [
+            repeat_underline_width,
+            shuffle_underline_width,
+            speed_underline_width,
+            favorite_underline_width,
+        ]
+
+        underline_height = 3
+        underline_y_offset = 10
+        underline_color = (245, 245, 245)
+
+        selected_rect = option_rects[self.drawer_icon_index]
+        selected_width = underline_widths[self.drawer_icon_index]
+
+        underline_rect = pygame.Rect(
+            0,
+            0,
+            selected_width,
+            underline_height
+        )
+        underline_rect.centerx = selected_rect.centerx
+        underline_rect.top = max(
+            rect.bottom for rect in option_rects
+        ) + underline_y_offset
+
+        if self.drawer_section == "icons":
+            pygame.draw.rect(
+                screen,
+                underline_color,
+                underline_rect,
+                border_radius=max(1, underline_height // 2)
+            )
+
+        # ---------------------------------------------------------
+        # Playlist metadata and five-song queue preview
+        # ---------------------------------------------------------
+        preview, current_index, queue_count = self.get_drawer_queue_preview()
+
+        playlist_name_y = rect.top + int(h * 0.285)
+        track_count_y = rect.top + int(h * 0.330)
+        queue_start_y = rect.top + int(h * 0.430)
+        queue_gap = int(h * 0.092)
+
+        text_left_padding = int(drawer_w * 0.075)
+        text_right_padding = int(drawer_w * 0.075)
+        text_max_width = drawer_w - text_left_padding - text_right_padding
+        text_center_x = rect.left + drawer_w * 0.5
+
+        playlist_name = self.fit_text(
+            self.get_drawer_playlist_name().upper(),
+            self.home_item_font,
+            text_max_width
+        )
+
+        playlist_surface = self.home_item_font.render(
+            playlist_name,
+            True,
+            (235, 235, 245)
+        )
+        screen.blit(
+            playlist_surface,
+            playlist_surface.get_rect(
+                center=(text_center_x, playlist_name_y)
+            )
+        )
+
+        if queue_count:
+            track_label = "TRACK {} / {}".format(
+                current_index + 1,
+                queue_count
+            )
+        else:
+            track_label = "NO TRACKS"
+
+        track_surface = self.home_small_font.render(
+            track_label,
+            True,
+            (135, 135, 145)
+        )
+        screen.blit(
+            track_surface,
+            track_surface.get_rect(
+                center=(text_center_x, track_count_y)
+            )
+        )
+
+        if not preview:
+            empty_surface = self.home_small_font.render(
+                "Queue is empty",
+                True,
+                (135, 135, 145)
+            )
+            screen.blit(
+                empty_surface,
+                empty_surface.get_rect(
+                    center=(text_center_x, queue_start_y)
+                )
+            )
+            return
+
+        current_row_width = drawer_w - int(drawer_w * 0.10)
+        current_row_height = int(h * 0.072)
+
+        current_playing_index = self.get_current_queue_index()
+
+        for row_index, (offset, queue_index, song) in enumerate(preview):
+            row_y = queue_start_y + row_index * queue_gap
+
+            if song is None:
+                continue
+
+            is_selected = offset == 0
+            is_playing = queue_index == current_playing_index
+            is_pending = queue_index == self.pending_queue_index
+
+            if is_selected:
+                current_rect = pygame.Rect(
+                    0,
+                    0,
+                    current_row_width,
+                    current_row_height
+                )
+                current_rect.center = (text_center_x, row_y)
+                pygame.draw.rect(
+                    screen,
+                    (42, 42, 52),
+                    current_rect,
+                    border_radius=5
+                )
+
+            if is_selected:
+                title_color = (245, 245, 245)
+                artist_color = (175, 175, 185)
+            elif is_playing:
+                title_color = (205, 205, 215)
+                artist_color = (145, 145, 155)
+            else:
+                title_color = (155, 155, 165)
+                artist_color = (105, 105, 115)
+
+            title_text = self.fit_text(
+                song.title,
+                self.home_small_font,
+                text_max_width
+            )
+            artist_text = self.fit_text(
+                song.artist,
+                self.home_small_font,
+                text_max_width
+            )
+
+            title_surface = self.home_small_font.render(
+                title_text,
+                True,
+                title_color
+            )
+            artist_surface = self.home_small_font.render(
+                artist_text,
+                True,
+                artist_color
+            )
+
+            screen.blit(
+                title_surface,
+                title_surface.get_rect(
+                    center=(text_center_x, row_y - int(h * 0.014))
+                )
+            )
+            screen.blit(
+                artist_surface,
+                artist_surface.get_rect(
+                    center=(text_center_x, row_y + int(h * 0.016))
+                )
+            )
+
+            if is_pending:
+                pending_surface = self.home_small_font.render(
+                    "NEXT",
+                    True,
+                    (225, 225, 235)
+                )
+                screen.blit(
+                    pending_surface,
+                    pending_surface.get_rect(
+                        midright=(
+                            rect.right - text_right_padding,
+                            row_y
+                        )
+                    )
+                )
+
+
 
     def draw_home(self, screen):
         w, h = screen.get_size()
@@ -722,59 +1307,38 @@ class MusicScreen:
 
     def draw_now_playing(self, screen):
         w, h = screen.get_size()
-
         song = self.library.current_song()
 
         if song is None:
-            self.draw_centered_text(screen, "MUSIC", self.title_font, h * 0.40, (255, 255, 255))
-            self.draw_centered_text(screen, "No songs found", self.artist_font, h * 0.52, (150, 150, 160))
-            self.draw_centered_text(screen, "Check corolla_music folder", self.meta_font, h * 0.60, (120, 120, 130))
+            screen.fill((15, 15, 18))
+            self.draw_centered_text(
+                screen,
+                "MUSIC",
+                self.title_font,
+                h * 0.40,
+                (255, 255, 255)
+            )
             return
 
-        self.draw_background(screen, song)
+        song_key = song.audio_path  # Or another unique song path/property.
+        screen_size = (w, h)
 
-        art_size = int(min(w, h) * 0.39)
-        art_rect = pygame.Rect(0, 0, art_size, art_size)
-        art_rect.center = (w * 0.5, h * 0.37)
+        if (
+            self.now_playing_static_surface is None
+            or self.now_playing_static_song != song_key
+            or self.now_playing_static_size != screen_size
+        ):
+            self.now_playing_static_surface = (
+                self.build_now_playing_static_surface(song, screen_size)
+            )
+            self.now_playing_static_song = song_key
+            self.now_playing_static_size = screen_size
 
-        cover = self.load_image(song.image_path, (art_size, art_size))
-
-        if cover:
-            screen.blit(cover, art_rect)
-            pygame.draw.rect(screen, (220, 220, 230), art_rect, 2)
-        else:
-            self.draw_placeholder_art(screen, art_rect)
-
-        self.draw_multiline_text(
-            screen,
-            song.title,
-            self.title_font,
-            h * 0.665,
-            (255, 255, 255)
-        )
-
-        self.draw_centered_text(
-            screen,
-            song.artist,
-            self.artist_font,
-            h * 0.745,
-            (185, 185, 195)
-        )
-
-        track_text = "TRACK {} / {}".format(
-            self.library.current_index + 1,
-            len(self.library.songs)
-        )
-        self.draw_centered_text(
-            screen,
-            track_text,
-            self.meta_font,
-            h * 0.775,
-            (135, 135, 145)
-        )
+        screen.blit(self.now_playing_static_surface, (0, 0))
 
         self.draw_progress_bar(screen, song)
         self.draw_controls(screen)
+
 
     def draw(self, screen, state=None):
         if self.mode == "home":
@@ -785,5 +1349,47 @@ class MusicScreen:
 
         else:
             self.draw_now_playing(screen)
+            self.draw_music_drawer(screen)
 
-        self.draw_options_overlay(screen)
+
+
+
+    def update(self):
+        if (
+            self.drawer_open
+            and self.drawer_section == "queue"
+            and self.drawer_hold_key is not None
+            and self.drawer_hold_start is not None
+        ):
+            keys = pygame.key.get_pressed()
+
+            if not keys[self.drawer_hold_key]:
+                self.clear_drawer_hold()
+            elif (
+                not self.drawer_hold_consumed
+                and time.time() - self.drawer_hold_start
+                >= self.drawer_hold_seconds
+            ):
+                queue = self.get_drawer_queue()
+
+                if queue:
+                    if self.drawer_hold_key == pygame.K_UP:
+                        self.drawer_queue_index = 0
+                    elif self.drawer_hold_key == pygame.K_DOWN:
+                        self.drawer_queue_index = len(queue) - 1
+
+                self.drawer_hold_consumed = True
+
+        elif self.drawer_hold_key is not None:
+            self.clear_drawer_hold()
+
+        if self.drawer_open:
+            self.drawer_progress = min(
+                1.0,
+                self.drawer_progress + self.drawer_speed
+            )
+        else:
+            self.drawer_progress = max(
+                0.0,
+                self.drawer_progress - self.drawer_speed
+            )

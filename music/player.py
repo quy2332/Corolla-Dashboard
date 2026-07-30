@@ -1,45 +1,18 @@
-import os
-import json
 import pygame
 
 
-class MusicPlayer:
-    def __init__(self, volume=0.50, config_path="config/audio.json"):
-        pygame.mixer.init()
+MUSIC_ENDED = pygame.USEREVENT + 1
 
-        self.config_path = config_path
-        self.volume = self.load_volume(default=volume)
+
+class MusicPlayer:
+    def __init__(self, volume=0.50):
+        pygame.mixer.init()
+        pygame.mixer.music.set_endevent(MUSIC_ENDED)
+
+        self.volume = volume
         self.is_playing = False
         self.has_started = False
-
         pygame.mixer.music.set_volume(self.volume)
-
-    def load_volume(self, default=0.50):
-        if not os.path.exists(self.config_path):
-            return default
-
-        try:
-            with open(self.config_path, "r") as f:
-                data = json.load(f)
-
-            volume = float(data.get("volume", default))
-            return max(0.0, min(1.0, volume))
-
-        except Exception:
-            return default
-
-    def save_volume(self):
-        folder = os.path.dirname(self.config_path)
-
-        if folder:
-            os.makedirs(folder, exist_ok=True)
-
-        data = {
-            "volume": self.volume
-        }
-
-        with open(self.config_path, "w") as f:
-            json.dump(data, f, indent=2)
 
     def load(self, song):
         if song is None:
@@ -47,8 +20,8 @@ class MusicPlayer:
 
         pygame.mixer.music.load(song.audio_path)
         pygame.mixer.music.set_volume(self.volume)
-        self.is_playing = False
         self.has_started = False
+        self.is_playing = False
 
     def play(self):
         pygame.mixer.music.play()
@@ -71,31 +44,27 @@ class MusicPlayer:
     def toggle_play_pause(self):
         if self.is_playing:
             self.pause()
-        elif self.has_started:
-            self.unpause()
         else:
-            self.play()
+            if self.has_started:
+                self.unpause()
+            else:
+                self.play()
 
     def increase_volume(self):
         self.volume = min(1.0, self.volume + 0.05)
         pygame.mixer.music.set_volume(self.volume)
-        self.save_volume()
 
     def decrease_volume(self):
         self.volume = max(0.0, self.volume - 0.05)
         pygame.mixer.music.set_volume(self.volume)
-        self.save_volume()
 
     def get_volume_percent(self):
-        return int(round(self.volume * 100))
+        return int(self.volume * 100)
 
     def get_position_seconds(self):
-        if not pygame.mixer.music.get_busy() and not self.is_playing:
-            return 0
-
         pos_ms = pygame.mixer.music.get_pos()
 
         if pos_ms < 0:
             return 0
 
-        return pos_ms // 1000 
+        return pos_ms // 1000
