@@ -193,12 +193,9 @@ class MusicScreen:
         with open(self.config_path, "w") as f:
             json.dump(self.music_settings, f, indent=2)
 
-    def playlist_items(self):
-        return list(self.library.playlists.items())
+   
 
-    def home_item_count(self):
-        # 1 for Continue Playing, then all discovered playlists.
-        return 1 + len(self.playlist_items())
+
 
     def load_image(self, path, size):
         if path is None or not os.path.exists(path):
@@ -488,38 +485,7 @@ class MusicScreen:
         self.player.play()
         self.mode = "now_playing"
 
-    def play_playlist_song(self):
-        playlist = self.library.playlists.get(self.active_playlist_tag)
-        if not playlist:
-            return
 
-        songs = playlist["songs"]
-        if not songs:
-            return
-
-        self.playlist_selected_index %= len(songs)
-
-        self.play_song(
-            songs[self.playlist_selected_index],
-            queue=songs,
-            queue_index=self.playlist_selected_index,
-        )
-
-    def open_home_selection(self):
-        if self.home_selected_index == 0:
-            self.mode = "now_playing"
-            return
-
-        playlist_index = self.home_selected_index - 1
-        items = self.playlist_items()
-
-        if playlist_index < 0 or playlist_index >= len(items):
-            return
-
-        tag, _ = items[playlist_index]
-        self.active_playlist_tag = tag
-        self.playlist_selected_index = 0
-        self.mode = "playlist"
 
     def cycle_repeat_mode(self, direction):
         modes = ["off", "song", "playlist"]
@@ -599,73 +565,18 @@ class MusicScreen:
         if self.drawer_open:
             return self.handle_drawer_key(key)
 
-        if self.mode == "home":
-            return self.handle_home_key(key)
-
-        if self.mode == "playlist":
-            return self.handle_playlist_key(key)
+        if self.mode in (
+            "home",
+            "playlist",
+        ):
+            return self.home_screen.handle_key(key) 
 
         if self.mode == "now_playing":
             return self.handle_now_playing_key(key)
 
         return False
 
-    def handle_home_key(self, key):
-        if key == pygame.K_UP:
-            self.home_selected_index = (
-                self.home_selected_index - 1
-            ) % max(1, self.home_item_count())
-            return True
-
-        if key == pygame.K_DOWN:
-            self.home_selected_index = (
-                self.home_selected_index + 1
-            ) % max(1, self.home_item_count())
-            return True
-
-        if key == pygame.K_RETURN:
-            self.open_home_selection()
-            return True
-
-        if key == pygame.K_SPACE:
-            self.mode = "now_playing"
-            return True
-
-        return False
-
-    def handle_playlist_key(self, key):
-        playlist = self.library.playlists.get(self.active_playlist_tag)
-
-        if not playlist:
-            if key in (pygame.K_LEFT, pygame.K_ESCAPE):
-                self.mode = "home"
-                return True
-            return False
-
-        songs = playlist["songs"]
-
-        if key == pygame.K_LEFT or key == pygame.K_ESCAPE:
-            self.mode = "home"
-            return True
-
-        if key == pygame.K_UP:
-            self.playlist_selected_index = (
-                self.playlist_selected_index - 1
-            ) % max(1, len(songs))
-            return True
-
-        if key == pygame.K_DOWN:
-            self.playlist_selected_index = (
-                self.playlist_selected_index + 1
-            ) % max(1, len(songs))
-            return True
-
-        if key == pygame.K_RETURN:
-            self.play_playlist_song()
-            return True
-
-        return False
-
+    
 
     def handle_now_playing_key(self, key):
         if key == pygame.K_SPACE:
