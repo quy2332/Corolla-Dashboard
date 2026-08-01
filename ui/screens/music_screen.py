@@ -39,11 +39,11 @@ class MusicScreen:
         self.finished_handled = False
 
         self.title_font = pygame.font.Font(
-            "assets/fonts/rajdhani-bold.ttf",
+            "assets/fonts/Manrope-Bold.ttf",
             int(height * 0.050)
         )
         self.artist_font = pygame.font.Font(
-            "assets/fonts/roboto.ttf",
+            "assets/fonts/Manrope-Regular.ttf",
             int(height * 0.040)
         )
         self.meta_font = pygame.font.Font(
@@ -66,9 +66,20 @@ class MusicScreen:
             "assets/fonts/roboto.ttf",
             int(height * 0.026)
         )
+        
+        self.song_list_title_font = pygame.font.Font(
+            "assets/fonts/Manrope-Bold.ttf",
+            int(height * 0.024)
+        )
 
+        self.song_list_artist_font = pygame.font.Font(
+            "assets/fonts/Manrope-Regular.ttf",
+            int(height * 0.019)
+        )
 
         self.image_cache = {}
+
+        self.drawer_thumbnail_cache = {}
 
         self.config_path = "config/music.json"
         self.music_settings = self.load_music_settings()
@@ -201,6 +212,54 @@ class MusicScreen:
 
         self.image_cache[cache_key] = image
         return image
+
+    def get_drawer_thumbnail(self, path, size, radius=5):
+        if not path or not os.path.exists(path):
+            return None
+
+        key = (path, size, radius)
+
+        if key in self.drawer_thumbnail_cache:
+            return self.drawer_thumbnail_cache[key]
+
+        try:
+            image = pygame.image.load(path).convert()
+            image = pygame.transform.smoothscale(
+                image,
+                (size, size)
+            )
+
+            # Build the rounded version once.
+            rounded = pygame.Surface(
+                (size, size),
+                pygame.SRCALPHA
+            )
+
+            rounded.blit(image, (0, 0))
+
+            mask = pygame.Surface(
+                (size, size),
+                pygame.SRCALPHA
+            )
+
+            pygame.draw.rect(
+                mask,
+                (255, 255, 255, 255),
+                mask.get_rect(),
+                border_radius=radius
+            )
+
+            rounded.blit(
+                mask,
+                (0, 0),
+                special_flags=pygame.BLEND_RGBA_MIN
+            )
+
+            self.drawer_thumbnail_cache[key] = rounded
+            return rounded
+
+        except pygame.error:
+            return None
 
     def get_scaled_music_icon(self, name, size):
         key = (name, size)
@@ -364,8 +423,8 @@ class MusicScreen:
             surface,
             song.artist,
             self.artist_font,
-            h * 0.745,
-            (185, 185, 195)
+            h * 0.7,
+            (255, 255, 255)
         )
 
         track_text = "TRACK {} / {}".format(
@@ -1081,96 +1140,192 @@ class MusicScreen:
             return
 
         current_row_width = drawer_w - int(drawer_w * 0.10)
-        current_row_height = int(h * 0.072)
-
         current_playing_index = self.get_current_queue_index()
 
-        for row_index, (offset, queue_index, song) in enumerate(preview):
-            row_y = queue_start_y + row_index * queue_gap
+        thumbnail_size = 38
+        thumbnail_radius = 5
 
+        queue_left_padding = 16
+        queue_right_padding = 12
+
+        thumbnail_x = rect.left + queue_left_padding
+        text_x = thumbnail_x + thumbnail_size + 10
+
+        row_height = int(h * 0.078)
+        row_width = (
+            drawer_w
+            - queue_left_padding
+            - queue_right_padding
+        )
+
+        title_max_width = (
+            rect.right
+            - queue_right_padding
+            - text_x
+            - 4
+        )
+
+        for row_index, (_, song_queue_index, song) in enumerate(preview):
             if song is None:
                 continue
 
-            is_selected = offset == 0
-            is_playing = queue_index == current_playing_index
-            is_pending = queue_index == self.pending_queue_index
+            row_y = (
+                queue_start_y
+                + row_index * queue_gap
+            )
 
-            if is_selected:
-                current_rect = pygame.Rect(
-                    0,
-                    0,
-                    current_row_width,
-                    current_row_height
-                )
-                current_rect.center = (text_center_x, row_y)
+            is_highlighted = (
+                self.drawer_section == "queue"
+                and song_queue_index == self.drawer_queue_index
+            )
+
+            is_current = (
+                song_queue_index == current_playing_index
+            )
+
+            is_pending = (
+                self.pending_queue_index is not None
+                and song_queue_index == self.pending_queue_index
+            )
+
+            row_rect = pygame.Rect(
+                rect.left + queue_left_padding,
+                row_y - row_height // 2,
+                row_width,
+                row_height
+            )
+
+            if is_highlighted:
                 pygame.draw.rect(
                     screen,
-                    (42, 42, 52),
-                    current_rect,
-                    border_radius=5
+                    (43, 43, 52),
+                    row_rect,
+                    border_radius=7
                 )
 
-            if is_selected:
-                title_color = (245, 245, 245)
-                artist_color = (175, 175, 185)
-            elif is_playing:
-                title_color = (205, 205, 215)
-                artist_color = (145, 145, 155)
+            elif is_current:
+                pygame.draw.rect(
+                    screen,
+                    (30, 30, 37),
+                    row_rect,
+                    border_radius=7
+                )
+
+            thumbnail = self.get_drawer_thumbnail(
+                song.image_path,
+                thumbnail_size,
+                thumbnail_radius
+            )
+
+            thumbnail_rect = pygame.Rect(
+                0,
+                0,
+                thumbnail_size,
+                thumbnail_size
+            )
+
+            thumbnail_rect.midleft = (
+                thumbnail_x,
+                row_y
+            )
+
+            if thumbnail is not None:
+                screen.blit(
+                    thumbnail,
+                    thumbnail_rect
+                )
             else:
-                title_color = (155, 155, 165)
-                artist_color = (105, 105, 115)
+                pygame.draw.rect(
+                    screen,
+                    (48, 48, 56),
+                    thumbnail_rect,
+                    border_radius=thumbnail_radius
+                )
+
+            title_color = (
+                (255, 255, 255)
+                if is_highlighted
+                else (210, 210, 220)
+            )
+
+            artist_color = (
+                (205, 205, 215)
+                if is_highlighted
+                else (135, 135, 145)
+            )
+
+            reserved_next_width = 42 if is_pending else 0
+            available_text_width = max(
+                20,
+                title_max_width - reserved_next_width
+            )
 
             title_text = self.fit_text(
                 song.title,
-                self.home_small_font,
-                text_max_width
-            )
-            artist_text = self.fit_text(
-                song.artist,
-                self.home_small_font,
-                text_max_width
+                self.song_list_title_font,
+                available_text_width
             )
 
-            title_surface = self.home_small_font.render(
+            artist_text = self.fit_text(
+                song.artist,
+                self.song_list_artist_font,
+                available_text_width
+            )
+
+            title_surface = self.song_list_title_font.render(
                 title_text,
                 True,
                 title_color
             )
-            artist_surface = self.home_small_font.render(
+
+            artist_surface = self.song_list_artist_font.render(
                 artist_text,
                 True,
                 artist_color
             )
 
-            screen.blit(
-                title_surface,
-                title_surface.get_rect(
-                    center=(text_center_x, row_y - int(h * 0.014))
+            title_rect = title_surface.get_rect(
+                midleft=(
+                    text_x,
+                    row_y - 8
                 )
             )
+
+            artist_rect = artist_surface.get_rect(
+                midleft=(
+                    text_x,
+                    row_y + 11
+                )
+            )
+
+            screen.blit(
+                title_surface,
+                title_rect
+            )
+
             screen.blit(
                 artist_surface,
-                artist_surface.get_rect(
-                    center=(text_center_x, row_y + int(h * 0.016))
-                )
+                artist_rect
             )
 
             if is_pending:
-                pending_surface = self.home_small_font.render(
+                next_surface = self.home_small_font.render(
                     "NEXT",
                     True,
-                    (225, 225, 235)
+                    (245, 245, 245)
                 )
-                screen.blit(
-                    pending_surface,
-                    pending_surface.get_rect(
-                        midright=(
-                            rect.right - text_right_padding,
-                            row_y
-                        )
+
+                next_rect = next_surface.get_rect(
+                    midright=(
+                        rect.right - queue_right_padding,
+                        row_y
                     )
                 )
 
+                screen.blit(
+                    next_surface,
+                    next_rect
+                )
 
 
     def draw_home(self, screen):

@@ -15,6 +15,7 @@ SUPPORTED_AUDIO = (".mp3",)
 @dataclass
 class Song:
     title: str
+    artists: list[str]
     artist: str
     audio_path: str
     image_path: Optional[str]
@@ -53,8 +54,12 @@ class MusicLibrary:
             metadata = {}
 
             if os.path.exists(metadata_path):
-                with open(metadata_path, "r") as f:
-                    metadata = json.load(f)
+                with open(
+                    metadata_path,
+                    "r",
+                    encoding="utf-8"
+                ) as f:
+                    metadata = json.load(f) 
 
             for filename in sorted(os.listdir(artist_dir)):
                 if not filename.lower().endswith(SUPPORTED_AUDIO):
@@ -69,11 +74,31 @@ class MusicLibrary:
                 duration = song_metadata.get("duration", 210)
                 tags = song_metadata.get("tags", [])
 
-                artist_display = (
-                    playlist_display_name(tags[0])
-                    if tags
-                    else artist_name.replace("_", " ").title()
-                )
+                raw_artists = song_metadata.get("artists")
+
+                if isinstance(raw_artists, list):
+                    artists = [
+                        str(name).strip()
+                        for name in raw_artists
+                        if str(name).strip()
+                    ]
+                else:
+                    artists = []
+
+                # Backward compatibility for a single artist field.
+                if not artists:
+                    legacy_artist = song_metadata.get("artist")
+
+                    if legacy_artist:
+                        artists = [str(legacy_artist).strip()]
+
+                # Final fallback to the artist folder name.
+                if not artists:
+                    artists = [
+                        artist_name.replace("_", " ").title()
+                    ]
+
+                artist_display = ", ".join(artists)
 
                 image_path = os.path.join(artist_dir, f"{filename_title}.png")
                 if not os.path.exists(image_path):
@@ -82,6 +107,7 @@ class MusicLibrary:
                 self.songs.append(
                     Song(
                         title=title,
+                        artists=artists,
                         artist=artist_display,
                         audio_path=audio_path,
                         image_path=image_path,

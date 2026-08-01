@@ -78,7 +78,11 @@ class Dashboard:
             "system": InfoScreen(self.width, self.height),
             "gps": GpsScreen(self.width, self.height),
             "music": MusicScreen(self.width, self.height),
-        }
+            }
+
+        self.main_menu.set_music_screen(
+            self.screens["music"]
+        )
 
         self.current_screen_name = "main_menu"
 
@@ -640,31 +644,83 @@ class Dashboard:
 
 
     def render_long_press_progress(self):
-        if self.right_hold_start is None:
-            return
-
-        progress = min(
-            1.0,
-            (time.time() - self.right_hold_start) / self.right_hold_seconds
-        )
-
         bar_w = self.width * 0.18
-        bar_h = self.height * 0.012
-        x = self.width - bar_w - self.width * 0.04
+        bar_h = max(4, int(self.height * 0.012))
         y = self.height * 0.88
 
-        fill_w = bar_w * progress
+        background_color = (60, 60, 70)
+        fill_color = (235, 235, 245)
 
-        pygame.draw.rect(
-            self.screen,
-            (60, 60, 70),
-            pygame.Rect(x, y, bar_w, bar_h)
-        )
-        pygame.draw.rect(
-            self.screen,
-            (235, 235, 245),
-            pygame.Rect(x, y, fill_w, bar_h)
-        )
+        # LEFT hold: Music drawer.
+        if self.left_hold_start is not None:
+            left_progress = min(
+                1.0,
+                (time.time() - self.left_hold_start)
+                / self.left_hold_seconds
+            )
+
+            left_x = self.width * 0.04
+            left_fill_w = bar_w * left_progress
+
+            pygame.draw.rect(
+                self.screen,
+                background_color,
+                pygame.Rect(
+                    left_x,
+                    y,
+                    bar_w,
+                    bar_h
+                )
+            )
+
+            pygame.draw.rect(
+                self.screen,
+                fill_color,
+                pygame.Rect(
+                    left_x,
+                    y,
+                    left_fill_w,
+                    bar_h
+                )
+            )
+
+        # RIGHT hold: Split-screen sidebar.
+        if self.right_hold_start is not None:
+            right_progress = min(
+                1.0,
+                (time.time() - self.right_hold_start)
+                / self.right_hold_seconds
+            )
+
+            right_x = (
+                self.width
+                - bar_w
+                - self.width * 0.04
+            )
+
+            right_fill_w = bar_w * right_progress
+
+            pygame.draw.rect(
+                self.screen,
+                background_color,
+                pygame.Rect(
+                    right_x,
+                    y,
+                    bar_w,
+                    bar_h
+                )
+            )
+
+            pygame.draw.rect(
+                self.screen,
+                fill_color,
+                pygame.Rect(
+                    right_x,
+                    y,
+                    right_fill_w,
+                    bar_h
+                )
+            ) 
 
     def render_debug_overlay(self):
         if not self.debug_overlay_enabled:

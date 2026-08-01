@@ -1,3 +1,4 @@
+import os
 import pygame
 
 from ui.widgets.status_bar import StatusBar
@@ -31,7 +32,7 @@ class MainMenuScreen:
             int(height * 0.030)
         )
 
-        self.icon_size = int(height * 0.24)
+        self.icon_size = int(height * 0.2)
         self.highlight_size = int(self.icon_size * 1.01)
 
         self.icons = {}
@@ -52,6 +53,98 @@ class MainMenuScreen:
             (self.highlight_size, self.highlight_size)
         )
 
+        self.music_screen = None
+
+        self.song_art_cache = {}
+
+    
+    def set_music_screen(self, music_screen):
+        self.music_screen = music_screen
+
+    def get_song_art(self, path, size, radius):
+        if not path or not os.path.exists(path):
+            return None
+
+        background_color = (15, 15, 18)
+        border_color = (210, 210, 220)
+        border_width = 2
+
+        key = (
+            path,
+            size,
+            radius,
+            background_color,
+            border_color,
+            border_width,
+        )
+
+        if key in self.song_art_cache:
+            return self.song_art_cache[key]
+
+        try:
+            image = pygame.image.load(path).convert()
+            image = pygame.transform.smoothscale(
+                image,
+                (size, size)
+            )
+
+            # Temporary alpha surface used only while building the cache.
+            rounded_image = pygame.Surface(
+                (size, size),
+                pygame.SRCALPHA
+            )
+
+            rounded_image.blit(image, (0, 0))
+
+            mask = pygame.Surface(
+                (size, size),
+                pygame.SRCALPHA
+            )
+
+            pygame.draw.rect(
+                mask,
+                (255, 255, 255, 255),
+                mask.get_rect(),
+                border_radius=radius
+            )
+
+            rounded_image.blit(
+                mask,
+                (0, 0),
+                special_flags=pygame.BLEND_RGBA_MIN
+            )
+
+            # Flatten onto the same color as the main-menu background.
+            # This removes expensive per-pixel alpha blending during rendering.
+            cached_panel = pygame.Surface(
+                (size, size)
+            ).convert()
+
+            cached_panel.fill(background_color)
+            cached_panel.blit(rounded_image, (0, 0))
+
+            # Cache the rounded border too.
+            pygame.draw.rect(
+                cached_panel,
+                border_color,
+                cached_panel.get_rect(),
+                border_width,
+                border_radius=radius
+            )
+
+            self.song_art_cache[key] = cached_panel
+            return cached_panel
+
+        except pygame.error as error:
+            print(
+                "Failed to load song artwork {}: {}".format(
+                    path,
+                    error
+                )
+            )
+            return None
+
+
     def move_up(self):
         self.move_left()
 
@@ -66,9 +159,66 @@ class MainMenuScreen:
 
     def get_selected_screen(self):
         return self.options[self.selected_index][1]
+    
+    def draw_current_song_art(self, screen):
+        if self.music_screen is None:
+            return
+
+        song = self.music_screen.library.current_song()
+
+        if song is None:
+            return
+
+        # Only display artwork when playback has actually started.
+        if not self.music_screen.player.is_playing:
+            return
+
+        art_path = getattr(
+            song,
+            "image_path",
+            None
+        )
+
+        if not art_path:
+            return
+
+        # Independent layout values for easy adjustment.
+        art_size = int(self.height * 0.5)
+
+        art_center_x = int(self.width * 0.25)
+        art_center_y = int(self.height * 0.42)
+
+        art_radius = int(art_size * 0.07)
+
+        artwork = self.get_song_art(
+            art_path,
+            art_size,
+            art_radius
+        ) 
+
+        if artwork is None:
+            return
+
+        art_rect = artwork.get_rect(
+            center=(
+                art_center_x,
+                art_center_y
+            )
+        )
+
+        screen.blit(
+            artwork,
+            art_rect
+        )
+
+       
 
     def draw(self, screen, state=None):
         self.status_bar.draw(screen)
+        
+        screen.fill((15, 15, 18))
+
+        self.draw_current_song_art(screen)
 
         w, h = screen.get_size()
 
@@ -78,7 +228,7 @@ class MainMenuScreen:
 
         total_width = tile_count * icon_size + (tile_count - 1) * gap
         start_x = (w - total_width) / 2
-        icon_y = h * 0.60
+        icon_y = h * 0.70
 
         icon_rects = []
 
@@ -98,7 +248,7 @@ class MainMenuScreen:
             label_color = (255, 255, 255) if is_selected else (150, 150, 160)
 
             label_surface = self.label_font.render(label, True, label_color)
-            label_y = rect.bottom + h * 0.045
+            label_y = rect.bottom + h * 0.03
             screen.blit(
                 label_surface,
                 label_surface.get_rect(center=(rect.centerx, label_y))
