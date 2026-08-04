@@ -2,23 +2,23 @@
   "songs": {
     "Hula Hoop (Future Funk Mix)": {
       "title": "Hula Hoop (Future Funk Mix)",
+      "artists": ["LOONA"],
+      "playlists": ["K-Pop", "K-Pop Remix"],
       "duration": 148,
       "tags": [
-	"loona",
-        "kpop",
-        "future_funk",
-        "remix"
+        "Future Funk",
+        "Remix"
       ]
     },
 
     "Butterfly (Lazerbwoi Jersey Flip)": {
       "title": "Butterfly (Lazerbwoi Jersey Flip)",
+      "artists": ["LOONA"],
+      "playlists": ["K-Pop", "K-Pop Jersey Club", "K-Pop Remix"],
       "duration": 87,
       "tags": [
-	"loona",
-        "kpop",
-        "jersey_club",
-        "remix"
+	"Jersey Club",
+        "Remix"
       ]
     }
   }

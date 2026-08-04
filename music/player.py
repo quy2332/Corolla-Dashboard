@@ -6,7 +6,17 @@ MUSIC_ENDED = pygame.USEREVENT + 1
 
 class MusicPlayer:
     def __init__(self, volume=0.50):
-        pygame.mixer.init()
+        # pygame.init() may have already initialized the mixer using
+        # its small default buffer. Restart it with music-friendly settings.
+        if pygame.mixer.get_init() is not None:
+            pygame.mixer.quit()
+
+        pygame.mixer.init(
+            frequency=44100,
+            size=-16,
+            channels=2,
+            buffer=4096
+        )
         pygame.mixer.music.set_endevent(MUSIC_ENDED)
 
         self.volume = volume

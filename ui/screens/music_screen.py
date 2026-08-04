@@ -1294,6 +1294,9 @@ class MusicScreen:
 
 
     def update(self):
+        if self.mode == "home":
+            self.home_screen.update()
+
         if (
             self.drawer_open
             and self.drawer_section == "queue"

@@ -6,9 +6,11 @@
         "Bảo Anh",
         "Táo"
       ],
+      "playlists":[
+        "V-Pop"
+      ],
       "duration": 269,
       "tags": [
-        "vpop"
       ]
     }
   }

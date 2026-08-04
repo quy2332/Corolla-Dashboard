@@ -2,12 +2,12 @@
   "songs": {
     "Perfect Night (Jersey Club Remix)": {
       "title": "Perfect Night (Jersey Club Remix by SenpaiSuchil)",
+      "artists": ["LE SSERAFIM"],
+      "playlists": ["K-Pop", "K-Pop Jersey Club", "K-Pop Remix"],
       "duration": 187,
       "tags": [
-	"le_sserafim",
-        "kpop",
-        "jersey_club",
-        "remix"
+	"Jersey CLub",
+        "Remix"
       ]
     }
 
