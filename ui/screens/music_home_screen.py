@@ -9,6 +9,7 @@ class MusicHomeScreen:
         self.home_section = "continue"
         self.playlist_card_index = 0
         self.artist_card_index = 0
+        self.tag_card_index = 0
 
         self.scroll_offset_y = 0.0
         self.scroll_target_y = 0.0
@@ -336,8 +337,7 @@ class MusicHomeScreen:
 
             thumbnail = self.music.get_drawer_thumbnail(
                 song.image_path,
-                thumbnail_size,
-                4
+                thumbnail_size
             )
 
             thumbnail_rect = pygame.Rect(
@@ -357,7 +357,6 @@ class MusicHomeScreen:
                     surface,
                     (50, 50, 58),
                     thumbnail_rect,
-                    border_radius=4
                 )
 
             text_left = thumbnail_rect.right + 10
@@ -427,25 +426,6 @@ class MusicHomeScreen:
         return 1 + len(self.playlist_items())
 
 
-    def play_playlist_song(self):
-        playlist = self.get_active_playlist() 
-
-        if not playlist:
-            return
-
-        songs = playlist["songs"]
-
-        if not songs:
-            return
-
-        self.music.playlist_selected_index %= len(songs)
-
-        self.music.play_song(
-            songs[self.music.playlist_selected_index],
-            queue=songs,
-            queue_index=self.music.playlist_selected_index,
-        )
-
 
     def open_home_selection(self):
         if self.music.home_selected_index == 0:
@@ -468,15 +448,17 @@ class MusicHomeScreen:
 
         self.music.active_playlist_tag = tag
         self.music.playlist_selected_index = 0
+        self.music.playlist_screen.reset_selection()
         self.music.mode = "playlist"
 
 
     def handle_home_key(self, key):
         playlists = self.home_playlists()
         artists = self.home_artists()
+        tags = self.home_tags()
 
         # ---------------------------------------------------------
-        # Continue Playing section
+        # Continue Playing
         # ---------------------------------------------------------
         if self.home_section == "continue":
             if key == pygame.K_DOWN:
@@ -500,7 +482,7 @@ class MusicHomeScreen:
             return False
 
         # ---------------------------------------------------------
-        # Playlists section
+        # Playlists
         # ---------------------------------------------------------
         if self.home_section == "playlists":
             if key == pygame.K_UP:
@@ -540,18 +522,16 @@ class MusicHomeScreen:
                     self.playlist_card_index
                 ]
 
-                self.music.active_playlist_tag = (
-                    playlist_key
-                )
-
+                self.music.active_playlist_tag = playlist_key
                 self.music.playlist_selected_index = 0
+                self.music.playlist_screen.reset_selection()
                 self.music.mode = "playlist"
                 return True
 
             return False
 
         # ---------------------------------------------------------
-        # Artists section
+        # Artists
         # ---------------------------------------------------------
         if self.home_section == "artists":
             if key == pygame.K_UP:
@@ -559,7 +539,17 @@ class MusicHomeScreen:
                 return True
 
             if key == pygame.K_DOWN:
-                # Reserved for the future Tags section.
+                self.home_section = "tags"
+
+                if tags:
+                    self.tag_card_index = max(
+                        0,
+                        min(
+                            self.tag_card_index,
+                            len(tags) - 1
+                        )
+                    )
+
                 return True
 
             if key == pygame.K_LEFT and artists:
@@ -586,51 +576,55 @@ class MusicHomeScreen:
                 )
 
                 self.music.playlist_selected_index = 0
+                self.music.playlist_screen.reset_selection()
                 self.music.mode = "playlist"
-                return True
-
-        return False
-
-
-    def handle_playlist_key(self, key):
-        playlist = self.get_active_playlist()    
-
-        if not playlist:
-            if key in (
-                pygame.K_LEFT,
-                pygame.K_ESCAPE,
-            ):
-                self.music.mode = "home"
                 return True
 
             return False
 
-        songs = playlist["songs"]
+        # ---------------------------------------------------------
+        # Tags
+        # ---------------------------------------------------------
+        if self.home_section == "tags":
+            if key == pygame.K_UP:
+                self.home_section = "artists"
+                return True
 
-        if key in (
-            pygame.K_LEFT,
-            pygame.K_ESCAPE,
-        ):
-            self.music.mode = "home"
-            return True
+            if key == pygame.K_DOWN:
+                # Tags is currently the final section.
+                return True
 
-        if key == pygame.K_UP:
-            self.music.playlist_selected_index = (
-                self.music.playlist_selected_index - 1
-            ) % max(1, len(songs))
-            return True
+            if key == pygame.K_LEFT and tags:
+                self.tag_card_index = max(
+                    0,
+                    self.tag_card_index - 1
+                )
+                return True
 
-        if key == pygame.K_DOWN:
-            self.music.playlist_selected_index = (
-                self.music.playlist_selected_index + 1
-            ) % max(1, len(songs))
-            return True
+            if key == pygame.K_RIGHT and tags:
+                self.tag_card_index = min(
+                    len(tags) - 1,
+                    self.tag_card_index + 1
+                )
+                return True
 
-        if key == pygame.K_RETURN:
-            self.play_playlist_song()
-            return True
+            if key == pygame.K_RETURN and tags:
+                tag_name, _ = tags[
+                    self.tag_card_index
+                ]
 
-        return False
+                self.music.active_playlist_tag = (
+                    "__tag__:" + tag_name
+                )
+
+                self.music.playlist_selected_index = 0
+                self.music.playlist_screen.reset_selection()
+                self.music.mode = "playlist"
+                return True
+
+        return False 
+
+
 
 
     def handle_key(self, key):
@@ -692,6 +686,12 @@ class MusicHomeScreen:
     def home_artists(self):
         return list(
             self.music.library.artists.items()
+        
+        )
+
+    def home_tags(self):
+        return list(
+            self.music.library.tags.items()
         )
 
     
@@ -724,10 +724,25 @@ class MusicHomeScreen:
                 artist_name
             )
 
+        tag_prefix = "__tag__:"
+
+        if (
+            isinstance(active_key, str)
+            and active_key.startswith(tag_prefix)
+        ):
+            tag_name = active_key[
+                len(tag_prefix):
+            ]
+
+            return self.music.library.tags.get(
+                tag_name
+            )
+
         return self.music.library.playlists.get(
             active_key
-        )
+        ) 
 
+    
     def update_scroll_target(self):
         h = self.music.height
 
@@ -755,12 +770,16 @@ class MusicHomeScreen:
             )
 
         else:
-            # Future Tags section.
+            tag_card_height = int(h * 0.095)
+            tag_vertical_gap = int(h * 0.020)
+
             selected_top = int(h * 1.325)
+
             selected_bottom = (
                 int(h * 1.375)
-                + card_height
-            )
+                + tag_card_height * 2
+                + tag_vertical_gap
+            ) 
 
         target = self.scroll_target_y
 
@@ -782,7 +801,6 @@ class MusicHomeScreen:
             content_bottom - viewport_bottom
         )
 
-        
         target = max(
             -max_scroll,
             target
@@ -1158,6 +1176,54 @@ class MusicHomeScreen:
             card_height=card_height
         )
 
+        # ---------------------------------------------------------
+        # Tags heading
+        # ---------------------------------------------------------
+        tags_heading_y = (
+            int(h * 1.325)
+            + page_offset_y
+        )
+
+        tags_heading = self.continue_heading_font.render(
+            "Tags",
+            True,
+            (
+                (245, 245, 250)
+                if self.home_section == "tags"
+                else (190, 190, 200)
+            )
+        )
+
+        screen.blit(
+            tags_heading,
+            tags_heading.get_rect(
+                midleft=(
+                    section_left,
+                    tags_heading_y
+                )
+            )
+        )
+
+        # ---------------------------------------------------------
+        # Horizontal tag cards
+        # ---------------------------------------------------------
+        tags = self.home_tags()
+
+        tags_cards_top = (
+            int(h * 1.375)
+            + page_offset_y
+        )
+
+        self.draw_tag_cards(
+            screen=screen,
+            tags=tags,
+            selected_index=self.tag_card_index,
+            cards_top=tags_cards_top,
+            section_left=section_left,
+            cards_width=cards_width
+        ) 
+
+
         self.draw_scroll_indicator(screen)
 
 
@@ -1274,8 +1340,7 @@ class MusicHomeScreen:
 
             thumbnail = self.music.get_drawer_thumbnail(
                 song.image_path,
-                thumbnail_size,
-                4
+                thumbnail_size
             )
 
             thumbnail_rect = pygame.Rect(
@@ -1294,8 +1359,7 @@ class MusicHomeScreen:
                 pygame.draw.rect(
                     screen,
                     (50, 50, 58),
-                    thumbnail_rect,
-                    border_radius=4
+                    thumbnail_rect
                 )
 
             text_left = thumbnail_rect.right + 10
@@ -1494,7 +1558,7 @@ class MusicHomeScreen:
 
         content_top = int(h * 0.185)
         content_bottom = (
-            int(h * 0.975)
+            int(h * 1.375)
             + card_height
         )
 
@@ -1568,6 +1632,129 @@ class MusicHomeScreen:
             thumb_rect,
             border_radius=track_width // 2
         )
+
+    def draw_tag_card(
+        self,
+        screen,
+        card_rect,
+        tag_name,
+        selected
+    ):
+        radius = 10
+
+        pygame.draw.rect(
+            screen,
+            (42, 42, 50) if selected else (25, 25, 31),
+            card_rect,
+            border_radius=radius
+        )
+
+        pygame.draw.rect(
+            screen,
+            (235, 235, 245) if selected else (70, 70, 80),
+            card_rect,
+            2 if selected else 1,
+            border_radius=radius
+        )
+
+        available_width = card_rect.width - 20
+
+        fitted_name = self.music.fit_text(
+            tag_name,
+            self.playlist_card_title_font,
+            available_width
+        )
+
+        text_surface = self.playlist_card_title_font.render(
+            fitted_name,
+            True,
+            (250, 250, 250)
+            if selected
+            else (175, 175, 185)
+        )
+
+        screen.blit(
+            text_surface,
+            text_surface.get_rect(
+                center=card_rect.center
+            )
+    )
+
+    def draw_tag_cards(
+        self,
+        screen,
+        tags,
+        selected_index,
+        cards_top,
+        section_left,
+        cards_width
+    ):
+        if not tags:
+            return
+
+        columns = 3
+        rows = 2
+        visible_count = columns * rows
+
+        horizontal_gap = int(self.music.width * 0.015)
+        vertical_gap = int(self.music.height * 0.020)
+
+        card_width = int(
+            (
+                cards_width
+                - horizontal_gap * (columns - 1)
+            )
+            / columns
+        )
+
+        card_height = int(self.music.height * 0.095)
+
+        page_index = selected_index // visible_count
+        first_visible = page_index * visible_count
+
+        visible_tags = tags[
+            first_visible:
+            first_visible + visible_count
+        ]
+
+        for visible_index, (tag_name, _) in enumerate(
+            visible_tags
+        ):
+            row = visible_index // columns
+            column = visible_index % columns
+
+            card_left = (
+                section_left
+                + column
+                * (card_width + horizontal_gap)
+            )
+
+            card_top = (
+                cards_top
+                + row
+                * (card_height + vertical_gap)
+            )
+
+            card_rect = pygame.Rect(
+                card_left,
+                card_top,
+                card_width,
+                card_height
+            )
+
+            actual_index = first_visible + visible_index
+
+            selected = (
+                self.home_section == "tags"
+                and actual_index == selected_index
+            )
+
+            self.draw_tag_card(
+                screen,
+                card_rect,
+                tag_name,
+                selected
+            )
 
     def draw(self, screen):
         if self.music.mode == "home":

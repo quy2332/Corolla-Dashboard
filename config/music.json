@@ -1,6 +1,6 @@
 {
   "repeat_mode": "playlist",
-  "shuffle": false,
+  "shuffle": true,
   "playback_speed": 1.0,
   "favorites": []
 }

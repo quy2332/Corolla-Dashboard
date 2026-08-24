@@ -7,6 +7,7 @@ import random
 from music.library import MusicLibrary
 from music.player import MusicPlayer
 from ui.screens.music_home_screen import MusicHomeScreen
+from ui.screens.music_playlist_screen import MusicPlaylistScreen
 
 
 class MusicScreen:
@@ -21,6 +22,7 @@ class MusicScreen:
         self.dark_overlay.fill((0, 0, 0, 165))
 
         self.background_cache = {}
+        self.now_playing_art_cache = {}
 
         self.library = MusicLibrary()
         self.player = MusicPlayer(volume=0.50)
@@ -145,6 +147,12 @@ class MusicScreen:
         self.music_scaled_icon_cache = {}
         
         self.home_screen = MusicHomeScreen(self)
+        self.playlist_screen = MusicPlaylistScreen(
+            self,
+            self.home_screen
+        )
+
+        self.restored_position = 0
 
 
     def load_music_settings(self):
@@ -201,61 +209,61 @@ class MusicScreen:
         if path is None or not os.path.exists(path):
             return None
 
-        cache_key = (path, size)
+        cache_key = (
+            path,
+            size
+        )
 
         if cache_key in self.image_cache:
             return self.image_cache[cache_key]
 
-        image = pygame.image.load(path).convert_alpha()
-        image = pygame.transform.smoothscale(image, size)
+        try:
+            image = pygame.image.load(
+                path
+            ).convert()
 
-        self.image_cache[cache_key] = image
-        return image
+            image = pygame.transform.smoothscale(
+                image,
+                size
+            )
 
-    def get_drawer_thumbnail(self, path, size, radius=5):
+            self.image_cache[
+                cache_key
+            ] = image
+
+            return image
+
+        except pygame.error:
+            return None 
+
+    def get_drawer_thumbnail(self, path, size):
         if not path or not os.path.exists(path):
             return None
 
-        key = (path, size, radius)
+        key = (
+            "square",
+            path,
+            size,
+        )
 
         if key in self.drawer_thumbnail_cache:
             return self.drawer_thumbnail_cache[key]
 
         try:
-            image = pygame.image.load(path).convert()
-            image = pygame.transform.smoothscale(
+            image = pygame.image.load(
+                path
+            ).convert()
+
+            image = pygame.transform.scale(
                 image,
-                (size, size)
+                (
+                    size,
+                    size,
+                )
             )
 
-            # Build the rounded version once.
-            rounded = pygame.Surface(
-                (size, size),
-                pygame.SRCALPHA
-            )
-
-            rounded.blit(image, (0, 0))
-
-            mask = pygame.Surface(
-                (size, size),
-                pygame.SRCALPHA
-            )
-
-            pygame.draw.rect(
-                mask,
-                (255, 255, 255, 255),
-                mask.get_rect(),
-                border_radius=radius
-            )
-
-            rounded.blit(
-                mask,
-                (0, 0),
-                special_flags=pygame.BLEND_RGBA_MIN
-            )
-
-            self.drawer_thumbnail_cache[key] = rounded
-            return rounded
+            self.drawer_thumbnail_cache[key] = image
+            return image
 
         except pygame.error:
             return None
@@ -272,6 +280,303 @@ class MusicScreen:
             )
 
         return self.music_scaled_icon_cache[key]
+
+    def get_now_playing_artwork(
+        self,
+        path,
+        size,
+        radius
+    ):
+        if not path or not os.path.exists(path):
+            return None
+
+        key = (
+            path,
+            size,
+            radius,
+        )
+
+        if key in self.now_playing_art_cache:
+            return self.now_playing_art_cache[key]
+
+        try:
+            source = pygame.image.load(
+                path
+            ).convert()
+
+            scaled = pygame.transform.smoothscale(
+                source,
+                (
+                    size,
+                    size,
+                )
+            )
+
+            rounded = pygame.Surface(
+                (
+                    size,
+                    size,
+                ),
+                pygame.SRCALPHA
+            )
+
+            rounded.blit(
+                scaled,
+                (0, 0)
+            )
+
+            mask = pygame.Surface(
+                (
+                    size,
+                    size,
+                ),
+                pygame.SRCALPHA
+            )
+
+            mask.fill(
+                (0, 0, 0, 0)
+            )
+
+            pygame.draw.rect(
+                mask,
+                (255, 255, 255, 255),
+                mask.get_rect(),
+                border_radius=radius
+            )
+
+            rounded.blit(
+                mask,
+                (0, 0),
+                special_flags=pygame.BLEND_RGBA_MIN
+            )
+
+            # Flatten the rounded result onto the known screen background.
+            # This makes normal per-frame blitting opaque and faster.
+            flattened = pygame.Surface(
+                (
+                    size,
+                    size,
+                )
+            ).convert()
+
+            flattened.fill(
+                (15, 15, 18)
+            )
+
+            flattened.blit(
+                rounded,
+                (0, 0)
+            )
+
+            self.now_playing_art_cache[key] = flattened
+            return flattened
+
+        except pygame.error:
+            return None
+
+    def get_save_state(self):
+        song = self.library.current_song()
+
+        if song is None:
+            song_path = None
+            position = 0
+
+        else:
+            song_path = song.audio_path
+            position = (
+                self.player.get_position_seconds()
+            )
+
+        return {
+            "song_path": song_path,
+            "position": position,
+            "was_playing": self.player.is_playing,
+
+            "volume": self.player.volume,
+
+            "repeat_mode": self.music_settings[
+                "repeat_mode"
+            ],
+
+            "shuffle": self.music_settings[
+                "shuffle"
+            ],
+
+            "active_playlist": (
+                self.active_playlist_tag
+            ),
+
+            "queue": [
+                song.audio_path
+                for song in self.play_queue
+            ],
+
+            "queue_index": (
+                self.play_queue_index
+            ),
+        }
+
+    def restore_save_state(self, state):
+        if not isinstance(state, dict):
+            return
+
+        song_path = state.get(
+            "song_path"
+        )
+
+        saved_position = state.get(
+            "position",
+            0
+        )
+
+        saved_volume = state.get(
+            "volume"
+        )
+
+        saved_queue_paths = state.get(
+            "queue",
+            []
+        )
+
+        saved_queue_index = state.get(
+            "queue_index",
+            0
+        )
+
+        saved_playlist = state.get(
+            "active_playlist"
+        )
+
+        saved_repeat = state.get(
+            "repeat_mode"
+        )
+
+        saved_shuffle = state.get(
+            "shuffle"
+        )
+
+        # ---------------------------------------------------------
+        # Restore volume
+        # ---------------------------------------------------------
+        if saved_volume is not None:
+            try:
+                self.player.volume = max(
+                    0.0,
+                    min(
+                        1.0,
+                        float(saved_volume)
+                    )
+                )
+
+                pygame.mixer.music.set_volume(
+                    self.player.volume
+                )
+
+            except (TypeError, ValueError):
+                pass
+
+        # ---------------------------------------------------------
+        # Restore music settings
+        # ---------------------------------------------------------
+        if saved_repeat in (
+            "off",
+            "song",
+            "playlist"
+        ):
+            self.music_settings[
+                "repeat_mode"
+            ] = saved_repeat
+
+        if isinstance(
+            saved_shuffle,
+            bool
+        ):
+            self.music_settings[
+                "shuffle"
+            ] = saved_shuffle
+
+        self.active_playlist_tag = (
+            saved_playlist
+        )
+
+        # ---------------------------------------------------------
+        # Build lookup of existing songs
+        # ---------------------------------------------------------
+        songs_by_path = {
+            song.audio_path: song
+            for song in self.library.songs
+        }
+
+        # ---------------------------------------------------------
+        # Restore queue
+        # ---------------------------------------------------------
+        restored_queue = []
+
+        if isinstance(
+            saved_queue_paths,
+            list
+        ):
+            for path in saved_queue_paths:
+                song = songs_by_path.get(
+                    path
+                )
+
+                if song is not None:
+                    restored_queue.append(
+                        song
+                    )
+
+        if restored_queue:
+            self.play_queue = (
+                restored_queue
+            )
+
+            self.play_queue_index = max(
+                0,
+                min(
+                    int(saved_queue_index),
+                    len(restored_queue) - 1
+                )
+            )
+
+        # ---------------------------------------------------------
+        # Restore selected/current song
+        # ---------------------------------------------------------
+        saved_song = songs_by_path.get(
+            song_path
+        )
+
+        if saved_song is None:
+            return
+
+        try:
+            self.library.current_index = (
+                self.library.songs.index(
+                    saved_song
+                )
+            )
+        except ValueError:
+            return
+
+        self.player.load(
+            saved_song
+        )
+
+        # Store the saved playback point for later.
+        try:
+            self.restored_position = max(
+                0,
+                int(saved_position)
+            )
+        except (TypeError, ValueError):
+            self.restored_position = 0
+
+        # Deliberately remain paused after boot.
+        self.player.is_playing = False
+        self.player.has_started = False
+
+        self.invalidate_now_playing_cache()
+
 
     def format_time(self, seconds):
         minutes = seconds // 60
@@ -402,13 +707,58 @@ class MusicScreen:
         art_rect = pygame.Rect(0, 0, art_size, art_size)
         art_rect.center = (w * 0.5, h * 0.37)
 
-        cover = self.load_image(song.image_path, (art_size, art_size))
+        art_radius = max(
+            1,
+            int(art_size * 0.055)
+        )
 
-        if cover:
-            surface.blit(cover, art_rect)
-            pygame.draw.rect(surface, (220, 220, 230), art_rect, 2)
+        cover = self.get_now_playing_artwork(
+            song.image_path,
+            art_size,
+            art_radius
+        )
+
+        if cover is not None:
+            surface.blit(
+                cover,
+                art_rect
+            )
+
+            pygame.draw.rect(
+                surface,
+                (220, 220, 230),
+                art_rect,
+                2,
+                border_radius=art_radius
+            )
         else:
-            self.draw_placeholder_art(surface, art_rect)
+            pygame.draw.rect(
+                surface,
+                (35, 35, 42),
+                art_rect,
+                border_radius=art_radius
+            )
+
+            pygame.draw.rect(
+                surface,
+                (90, 90, 100),
+                art_rect,
+                2,
+                border_radius=art_radius
+            )
+
+            no_art_surface = self.meta_font.render(
+                "NO ART",
+                True,
+                (140, 140, 140)
+            )
+
+            surface.blit(
+                no_art_surface,
+                no_art_surface.get_rect(
+                    center=art_rect.center
+                )
+            ) 
 
         self.draw_multiline_text(
             surface,
@@ -565,16 +915,16 @@ class MusicScreen:
         if self.drawer_open:
             return self.handle_drawer_key(key)
 
-        if self.mode in (
-            "home",
-            "playlist",
-        ):
-            return self.home_screen.handle_key(key) 
+        if self.mode == "home":
+            return self.home_screen.handle_key(key)
+
+        if self.mode == "playlist":
+            return self.playlist_screen.handle_key(key)
 
         if self.mode == "now_playing":
             return self.handle_now_playing_key(key)
 
-        return False
+        return False 
 
     
 
@@ -1056,7 +1406,6 @@ class MusicScreen:
         current_playing_index = self.get_current_queue_index()
 
         thumbnail_size = 38
-        thumbnail_radius = 5
 
         queue_left_padding = 16
         queue_right_padding = 12
@@ -1126,9 +1475,8 @@ class MusicScreen:
 
             thumbnail = self.get_drawer_thumbnail(
                 song.image_path,
-                thumbnail_size,
-                thumbnail_radius
-            )
+                thumbnail_size
+            ) 
 
             thumbnail_rect = pygame.Rect(
                 0,
@@ -1152,7 +1500,6 @@ class MusicScreen:
                     screen,
                     (48, 48, 56),
                     thumbnail_rect,
-                    border_radius=thumbnail_radius
                 )
 
             title_color = (
@@ -1278,13 +1625,11 @@ class MusicScreen:
 
     def draw(self, screen, state=None):
 
-        if self.mode in (
-            "home",
-            "playlist"
-        ):
-            self.home_screen.draw(
-                screen
-            )
+        if self.mode == "home":
+            self.home_screen.draw(screen)
+
+        elif self.mode == "playlist":
+            self.playlist_screen.draw(screen)
 
         else:
             self.draw_now_playing(screen)
@@ -1296,6 +1641,9 @@ class MusicScreen:
     def update(self):
         if self.mode == "home":
             self.home_screen.update()
+        
+        if self.mode == "playlist":
+            self.playlist_screen.update()
 
         if (
             self.drawer_open

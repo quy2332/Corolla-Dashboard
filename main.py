@@ -42,11 +42,21 @@ try:
 
         if state is None:
             dashboard.handle_events()
-            dashboard.screen.fill((15, 15, 18))
-            dashboard.status_bar.draw(dashboard.screen)
+            dashboard.update()
+
+            dashboard.screen.fill(
+                (15, 15, 18)
+            )
+
+            dashboard.status_bar.draw(
+                dashboard.screen
+            )
+
+            dashboard.render_long_press_progress()
+
             pygame.display.flip()
             dashboard.clock.tick(30)
-            continue
+            continue 
 
         dashboard.render(state)
 

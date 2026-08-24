@@ -1,6 +1,11 @@
 import time
+import subprocess
 import pygame
 
+from system.state_manager import (
+    save_state,
+    load_state,
+)
 from ui.screens.gauge_screen import GaugeScreen
 from ui.screens.info_screen import InfoScreen
 from ui.screens.gps_screen import GpsScreen
@@ -79,10 +84,12 @@ class Dashboard:
             "gps": GpsScreen(self.width, self.height),
             "music": MusicScreen(self.width, self.height),
             }
+        self.restore_saved_state()
 
         self.main_menu.set_music_screen(
             self.screens["music"]
         )
+        self.restore_saved_state()
 
         self.current_screen_name = "main_menu"
 
@@ -102,6 +109,15 @@ class Dashboard:
         self.right_hold_start = None
         self.right_hold_seconds = 3.0
         self.right_hold_consumed = False
+
+        self.shutdown_confirm_open = False
+        self.shutdown_confirm_selected = 0
+
+        # Global ENTER hold for safe system shutdown.
+        self.power_hold_start = None
+        self.power_hold_seconds = 5.0
+        self.power_hold_consumed = False
+        self.shutdown_in_progress = False
 
         self.running = True
 
@@ -213,6 +229,46 @@ class Dashboard:
         ):
             self.screens["music"].handle_key(pygame.K_RIGHT)
 
+    def handle_enter_tap(self):
+        # Sidebar owns ENTER while open.
+        if self.sidebar_open:
+            self.handle_sidebar_key(
+                pygame.K_RETURN
+            )
+            return
+
+        music_screen = self.get_music_screen()
+
+        # Music drawer owns ENTER while open.
+        if (
+            music_screen is not None
+            and music_screen.drawer_open
+        ):
+            music_screen.handle_key(
+                pygame.K_RETURN
+            )
+            return
+
+        # Give the active app first chance to use ENTER.
+        if self.route_to_current_screen(
+            pygame.K_RETURN
+        ):
+            return
+
+        # Dashboard-level ENTER behavior.
+        if self.split_mode:
+            if (
+                self.focus_side == "right"
+                and self.right_screen_name
+                == "main_menu"
+            ):
+                self.select_main_menu_option()
+            else:
+                self.maximize_focused_panel()
+
+        elif self.current_screen_name == "main_menu":
+            self.select_main_menu_option()
+
     def handle_sidebar_key(self, key):
         if key == pygame.K_ESCAPE or key == pygame.K_LEFT:
             self.sidebar_open = False
@@ -237,6 +293,16 @@ class Dashboard:
         return False
 
     def handle_keyup(self, key):
+        if key == pygame.K_RETURN:
+            if self.power_hold_start is not None:
+                self.power_hold_start = None
+
+                if not self.power_hold_consumed:
+                    self.handle_enter_tap()
+
+            self.power_hold_consumed = False
+            return
+
         if key == pygame.K_RIGHT:
             if self.right_hold_consumed:
                 self.right_hold_consumed = False
@@ -267,6 +333,20 @@ class Dashboard:
 
 
     def handle_keydown(self, key):
+        if self.shutdown_confirm_open:
+            self.handle_shutdown_confirm_key(key)
+            return
+
+        # ENTER is special:
+        # tap = normal ENTER action
+        # 5-second hold = safe shutdown
+        if key == pygame.K_RETURN:
+            if self.power_hold_start is None:
+                self.power_hold_start = time.time()
+                self.power_hold_consumed = False
+
+            return
+
         if self.sidebar_open:
             self.handle_sidebar_key(key)
             return
@@ -359,17 +439,7 @@ class Dashboard:
             ):
                 self.main_menu.move_down()
 
-        elif key == pygame.K_RETURN:
-            if self.split_mode:
-                if (
-                    self.focus_side == "right"
-                    and self.right_screen_name == "main_menu"
-                ):
-                    self.select_main_menu_option()
-                else:
-                    self.maximize_focused_panel()
-            elif self.current_screen_name == "main_menu":
-                self.select_main_menu_option()
+       
            
 
     def handle_options_key(self, key):
@@ -430,9 +500,59 @@ class Dashboard:
                 self.handle_keydown(event.key)
 
 
+    def handle_shutdown_confirm_key(self, key):
+        if key == pygame.K_ESCAPE:
+            self.shutdown_confirm_open = False
+            return True
+
+        if key == pygame.K_LEFT:
+            self.shutdown_confirm_selected = 0
+            return True
+
+        if key == pygame.K_RIGHT:
+            self.shutdown_confirm_selected = 1
+            return True
+
+        if key == pygame.K_RETURN:
+            if self.shutdown_confirm_selected == 0:
+                self.shutdown_confirm_open = False
+            else:
+                self.shutdown_confirm_open = False
+                self.shutdown_corolla_os()
+
+            return True
+
+        return True
+
+
     def update_long_press(self):
         keys = pygame.key.get_pressed()
+        # ---------------------------------------------------------
+        # ENTER hold: safe Corolla OS shutdown
+        # ---------------------------------------------------------
+        if not keys[pygame.K_RETURN]:
+            self.power_hold_start = None
 
+        elif (
+            self.power_hold_start is not None
+            and not self.power_hold_consumed
+            and not self.shutdown_in_progress
+        ):
+            held_time = (
+                time.time()
+                - self.power_hold_start
+            )
+
+            if held_time >= self.power_hold_seconds:
+                self.power_hold_consumed = True
+
+                # Cancel other long-press actions.
+                self.left_hold_start = None
+                self.right_hold_start = None
+
+                self.shutdown_confirm_open = True
+                self.shutdown_confirm_selected = 1
+                self.power_hold_start = None
         # ---------------------------------------------------------
         # LEFT hold: open the Music options drawer
         # ---------------------------------------------------------
@@ -487,6 +607,29 @@ class Dashboard:
             self.right_hold_consumed = True
             self.right_hold_start = None 
 
+    def restore_saved_state(self):
+        state = load_state()
+
+        if not isinstance(
+            state,
+            dict
+        ):
+            return
+
+        music_state = state.get(
+            "music",
+            {}
+        )
+
+        music_screen = (
+            self.get_music_screen()
+        )
+
+        if music_screen is not None:
+            music_screen.restore_save_state(
+                music_state
+            )
+
 
     def update_sidebar_animation(self):
         target = float(self.sidebar_selected_index)
@@ -521,6 +664,7 @@ class Dashboard:
             screen.update()
 
 
+
     def draw_screen_by_name(self, target_surface, screen_name, state, slot="fullscreen"):
         if screen_name == "main_menu":
             self.main_menu.draw(target_surface, state)
@@ -537,6 +681,147 @@ class Dashboard:
                 self.screen,
                 self.current_screen_name,
                 state
+            )
+
+    def render_shutdown_confirm(self):
+        if not self.shutdown_confirm_open:
+            return
+
+        overlay = pygame.Surface(
+            (self.width, self.height),
+            pygame.SRCALPHA
+        )
+        overlay.fill((0, 0, 0, 180))
+
+        self.screen.blit(
+            overlay,
+            (0, 0)
+        )
+
+        popup_w = int(self.width * 0.52)
+        popup_h = int(self.height * 0.30)
+
+        popup_rect = pygame.Rect(
+            0,
+            0,
+            popup_w,
+            popup_h
+        )
+
+        popup_rect.center = (
+            self.width // 2,
+            self.height // 2
+        )
+
+        pygame.draw.rect(
+            self.screen,
+            (24, 24, 30),
+            popup_rect,
+            border_radius=18
+        )
+
+        pygame.draw.rect(
+            self.screen,
+            (85, 85, 95),
+            popup_rect,
+            2,
+            border_radius=18
+        )
+
+        title_font = pygame.font.Font(
+            "assets/fonts/Manrope-Bold.ttf",
+            int(self.height * 0.045)
+        )
+
+        button_font = pygame.font.Font(
+            "assets/fonts/Manrope-Bold.ttf",
+            int(self.height * 0.030)
+        )
+
+        title_surface = title_font.render(
+            "Shut down Corolla OS?",
+            True,
+            (245, 245, 250)
+        )
+
+        self.screen.blit(
+            title_surface,
+            title_surface.get_rect(
+                center=(
+                    popup_rect.centerx,
+                    popup_rect.top + int(popup_h * 0.32)
+                )
+            )
+        )
+
+        cancel_rect = pygame.Rect(
+            0,
+            0,
+            int(popup_w * 0.28),
+            int(popup_h * 0.22)
+        )
+
+        shutdown_rect = cancel_rect.copy()
+
+        cancel_rect.center = (
+            popup_rect.centerx - int(popup_w * 0.18),
+            popup_rect.top + int(popup_h * 0.70)
+        )
+
+        shutdown_rect.center = (
+            popup_rect.centerx + int(popup_w * 0.18),
+            popup_rect.top + int(popup_h * 0.70)
+        )
+
+        buttons = [
+            (
+                cancel_rect,
+                "CANCEL"
+            ),
+            (
+                shutdown_rect,
+                "SHUT DOWN"
+            )
+        ]
+
+        for index, (rect, label) in enumerate(buttons):
+            selected = (
+                index
+                == self.shutdown_confirm_selected
+            )
+
+            pygame.draw.rect(
+                self.screen,
+                (52, 52, 62)
+                if selected
+                else (32, 32, 38),
+                rect,
+                border_radius=10
+            )
+
+            pygame.draw.rect(
+                self.screen,
+                (235, 235, 245)
+                if selected
+                else (80, 80, 90),
+                rect,
+                2 if selected else 1,
+                border_radius=10
+            )
+
+            text = button_font.render(
+                label,
+                True,
+                (250, 250, 250)
+                if selected
+                else (160, 160, 170)
+            )
+
+            self.screen.blit(
+                text,
+                text.get_rect(
+                    center=rect.center
+                )
             )
 
     def render_split(self, state):
@@ -720,7 +1005,9 @@ class Dashboard:
                     right_fill_w,
                     bar_h
                 )
-            ) 
+            )
+        
+        
 
     def render_debug_overlay(self):
         if not self.debug_overlay_enabled:
@@ -784,6 +1071,7 @@ class Dashboard:
                 music_screen.player.get_volume_percent()
             )
 
+        self.render_shutdown_confirm()
         self.render_debug_overlay()
  
     def render(self, state):
@@ -848,6 +1136,53 @@ class Dashboard:
 
         return False
 
+    def shutdown_corolla_os(self):
+        if self.shutdown_in_progress:
+            return
 
+        self.shutdown_in_progress = True
+
+        music_screen = self.get_music_screen()
+
+        state = {
+            "current_screen": self.current_screen_name,
+            "split_mode": self.split_mode,
+            "music": (
+                music_screen.get_save_state()
+                if music_screen is not None
+                else {}
+            ),
+        }
+
+        try:
+            save_state(state)
+
+            subprocess.run(
+                ["sync"],
+                check=False
+            )
+
+            pygame.event.clear()
+
+            subprocess.Popen(
+                [
+                    "sudo",
+                    "shutdown",
+                    "-h",
+                    "now"
+                ]
+            )
+
+        except Exception as error:
+            print(
+                "Shutdown error: {}".format(
+                    error
+                )
+            )
+
+            self.shutdown_in_progress = False
+            self.power_hold_consumed = False
+
+    
     def close(self):
         pygame.quit()

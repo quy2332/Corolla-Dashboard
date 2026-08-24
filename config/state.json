@@ -1,0 +1,25 @@
+{
+  "current_screen": "main_menu",
+  "split_mode": false,
+  "music": {
+    "song_path": "/home/quy/corolla_os/corolla_music/bao_anh/Tìm Em.mp3",
+    "position": 3,
+    "was_playing": false,
+    "volume": 0.15000000000000008,
+    "repeat_mode": "playlist",
+    "shuffle": true,
+    "active_playlist": "__all_songs__",
+    "queue": [
+      "/home/quy/corolla_os/corolla_music/bao_anh/Tìm Em.mp3",
+      "/home/quy/corolla_os/corolla_music/bao_anh/Từng Là Của Nhau.mp3",
+      "/home/quy/corolla_os/corolla_music/le_sserafim/Perfect Night (Jersey Club Remix).mp3",
+      "/home/quy/corolla_os/corolla_music/loona/Butterfly (Lazerbwoi Jersey Flip).mp3",
+      "/home/quy/corolla_os/corolla_music/loona/Hula Hoop (Future Funk Mix).mp3",
+      "/home/quy/corolla_os/corolla_music/newjeans/ASAP (Jersey Club Remix By M1R4).mp3",
+      "/home/quy/corolla_os/corolla_music/newjeans/How Sweet (UK Garage Remix by Swiiim).mp3",
+      "/home/quy/corolla_os/corolla_music/newjeans/Zero (Coke Studio Remix Solo Version).mp3"
+    ],
+    "queue_index": 0
+  },
+  "shutdown_timestamp": 1787602445
+}
