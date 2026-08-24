@@ -4,4 +4,6 @@ __pycache__/
 *.swp
 .vscode/
 
-corolla_music/
+#corolla_music/
+#/music_import/
+.venv/
