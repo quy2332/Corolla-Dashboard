@@ -420,84 +420,34 @@ class MusicScreen:
         if not isinstance(state, dict):
             return
 
-        song_path = state.get(
-            "song_path"
-        )
-
-        saved_position = state.get(
-            "position",
-            0
-        )
-
-        saved_volume = state.get(
-            "volume"
-        )
-
-        saved_queue_paths = state.get(
-            "queue",
-            []
-        )
-
-        saved_queue_index = state.get(
-            "queue_index",
-            0
-        )
-
-        saved_playlist = state.get(
-            "active_playlist"
-        )
-
-        saved_repeat = state.get(
-            "repeat_mode"
-        )
-
-        saved_shuffle = state.get(
-            "shuffle"
-        )
+        song_path = state.get("song_path")
+        saved_position = state.get("position", 0)
+        saved_volume = state.get("volume")
+        saved_queue_paths = state.get("queue", [])
+        saved_queue_index = state.get("queue_index", 0)
+        saved_playlist = state.get("active_playlist")
+        saved_repeat = state.get("repeat_mode")
+        saved_shuffle = state.get("shuffle")
 
         # ---------------------------------------------------------
         # Restore volume
         # ---------------------------------------------------------
         if saved_volume is not None:
             try:
-                self.player.volume = max(
-                    0.0,
-                    min(
-                        1.0,
-                        float(saved_volume)
-                    )
-                )
-
-                pygame.mixer.music.set_volume(
-                    self.player.volume
-                )
-
+                self.player.set_volume(float(saved_volume))
             except (TypeError, ValueError):
                 pass
 
         # ---------------------------------------------------------
         # Restore music settings
         # ---------------------------------------------------------
-        if saved_repeat in (
-            "off",
-            "song",
-            "playlist"
-        ):
-            self.music_settings[
-                "repeat_mode"
-            ] = saved_repeat
+        if saved_repeat in ("off", "song", "playlist"):
+            self.music_settings["repeat_mode"] = saved_repeat
 
-        if isinstance(
-            saved_shuffle,
-            bool
-        ):
-            self.music_settings[
-                "shuffle"
-            ] = saved_shuffle
+        if isinstance(saved_shuffle, bool):
+            self.music_settings["shuffle"] = saved_shuffle
 
-        self.active_playlist_tag = (
-            saved_playlist
-        )
+        self.active_playlist_tag = saved_playlist
 
         # ---------------------------------------------------------
         # Build lookup of existing songs
@@ -512,61 +462,44 @@ class MusicScreen:
         # ---------------------------------------------------------
         restored_queue = []
 
-        if isinstance(
-            saved_queue_paths,
-            list
-        ):
+        if isinstance(saved_queue_paths, list):
             for path in saved_queue_paths:
-                song = songs_by_path.get(
-                    path
-                )
+                song = songs_by_path.get(path)
 
                 if song is not None:
-                    restored_queue.append(
-                        song
-                    )
+                    restored_queue.append(song)
 
         if restored_queue:
-            self.play_queue = (
-                restored_queue
-            )
+            self.play_queue = restored_queue
 
             self.play_queue_index = max(
                 0,
                 min(
                     int(saved_queue_index),
-                    len(restored_queue) - 1
-                )
+                    len(restored_queue) - 1,
+                ),
             )
 
         # ---------------------------------------------------------
         # Restore selected/current song
         # ---------------------------------------------------------
-        saved_song = songs_by_path.get(
-            song_path
-        )
+        saved_song = songs_by_path.get(song_path)
 
         if saved_song is None:
             return
 
         try:
-            self.library.current_index = (
-                self.library.songs.index(
-                    saved_song
-                )
-            )
+            self.library.current_index = self.library.songs.index(saved_song)
         except ValueError:
             return
 
-        self.player.load(
-            saved_song
-        )
+        self.player.load(saved_song)
 
         # Store the saved playback point for later.
         try:
             self.restored_position = max(
                 0,
-                int(saved_position)
+                int(saved_position),
             )
         except (TypeError, ValueError):
             self.restored_position = 0
@@ -576,7 +509,6 @@ class MusicScreen:
         self.player.has_started = False
 
         self.invalidate_now_playing_cache()
-
 
     def format_time(self, seconds):
         minutes = seconds // 60

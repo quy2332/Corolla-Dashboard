@@ -27,7 +27,7 @@ class Song:
 class MusicLibrary:
     def __init__(
         self,
-        root_path="/home/quy/corolla_os/corolla_music"
+        root_path="../corolla_os/corolla_music"
     ):
         self.root_path = root_path
 
