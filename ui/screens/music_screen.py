@@ -39,6 +39,8 @@ class MusicScreen:
         self.play_queue = []
         self.play_queue_index = 0
 
+        self.queued_playlist_tags = []
+
         self.finished_handled = False
 
         self.title_font = pygame.font.Font(
@@ -96,6 +98,9 @@ class MusicScreen:
 
         self.drawer_icon_index = 0
         self.drawer_queue_index = 0
+
+        self.drawer_playlist_index = 0
+        self.drawer_playlist_items = []
 
         # A queued selection is played only after the current track ends.
         self.pending_queue_index = None
@@ -414,7 +419,164 @@ class MusicScreen:
             "queue_index": (
                 self.play_queue_index
             ),
+
+            "queued_playlists": list(
+                self.queued_playlist_tags
+            ),
         }
+
+    def get_queueable_playlists(self):
+        items = []
+
+        for tag, playlist in self.library.playlists.items():
+            if tag == self.active_playlist_tag:
+                continue
+
+            items.append(
+                (
+                    tag,
+                    playlist
+                )
+            )
+
+        items.sort(
+            key=lambda item: item[1].get(
+                "display_name",
+                item[0]
+            ).casefold()
+        )
+
+        return items
+
+    def enter_drawer_playlist_picker(self):
+        self.drawer_section = "playlist_picker"
+        self.drawer_playlist_items = (
+            self.get_queueable_playlists()
+        )
+        self.drawer_playlist_index = 0
+        self.clear_drawer_hold()
+
+    def start_next_queued_playlist(self):
+        while self.queued_playlist_tags:
+            playlist_tag = (
+                self.queued_playlist_tags.pop(0)
+            )
+
+            playlist = self.library.playlists.get(
+                playlist_tag
+            )
+
+            if not playlist:
+                # Playlist may have disappeared from metadata.
+                # Skip it and try the next queued one.
+                continue
+
+            songs = playlist.get(
+                "songs",
+                []
+            )
+
+            if not songs:
+                continue
+
+            self.active_playlist_tag = (
+                playlist_tag
+            )
+
+            queue = list(songs)
+
+            # Respect shuffle when entering the new playlist.
+            if self.music_settings["shuffle"]:
+                random.shuffle(queue)
+
+            self.play_queue = queue
+            self.play_queue_index = 0
+
+            self.finished_handled = False
+
+            self.play_song(
+                queue[0],
+                queue=queue,
+                queue_index=0
+            )
+
+            print(
+                "[Music] Started queued playlist: {}".format(
+                    playlist.get(
+                        "display_name",
+                        playlist_tag
+                    )
+                )
+            )
+
+            return True
+
+        return False
+
+
+    def queue_playlist(self, playlist_tag):
+        if not playlist_tag:
+            return False
+
+        playlist = self.library.playlists.get(
+            playlist_tag
+        )
+
+        if not playlist:
+            return False
+
+        # Don't queue duplicates for now.
+        if playlist_tag in self.queued_playlist_tags:
+            return False
+
+        self.queued_playlist_tags.append(
+            playlist_tag
+        )
+
+        print(
+            "[Music] Queued playlist: {}".format(
+                playlist.get(
+                    "display_name",
+                    playlist_tag
+                )
+            )
+        )
+
+        return True
+
+
+    def remove_queued_playlist(self, playlist_tag):
+        if playlist_tag not in self.queued_playlist_tags:
+            return False
+
+        self.queued_playlist_tags.remove(
+            playlist_tag
+        )
+
+        return True
+
+
+    def clear_queued_playlists(self):
+        self.queued_playlist_tags.clear()
+
+
+    def get_queued_playlists(self):
+        result = []
+
+        for playlist_tag in self.queued_playlist_tags:
+            playlist = self.library.playlists.get(
+                playlist_tag
+            )
+
+            if playlist:
+                result.append(
+                    (
+                        playlist_tag,
+                        playlist
+                    )
+                )
+
+        return result
 
     def restore_save_state(self, state):
         if not isinstance(state, dict):
@@ -428,6 +590,22 @@ class MusicScreen:
         saved_playlist = state.get("active_playlist")
         saved_repeat = state.get("repeat_mode")
         saved_shuffle = state.get("shuffle")
+        saved_queued_playlists = state.get(
+            "queued_playlists",
+            []
+        )
+
+        self.queued_playlist_tags = []
+
+        if isinstance(
+            saved_queued_playlists,
+            list
+        ):
+            for playlist_tag in saved_queued_playlists:
+                if playlist_tag in self.library.playlists:
+                    self.queued_playlist_tags.append(
+                        playlist_tag
+                    )
 
         # ---------------------------------------------------------
         # Restore volume
@@ -881,39 +1059,114 @@ class MusicScreen:
 
 
     def handle_song_finished(self):
-        # A manually queued track takes priority over repeat behavior.
+        # ---------------------------------------------------------
+        # Manually selected "play next" song has highest priority.
+        # ---------------------------------------------------------
         if self.pending_queue_index is not None:
             queue = self.get_drawer_queue()
 
             if queue:
                 target_index = max(
                     0,
-                    min(self.pending_queue_index, len(queue) - 1)
+                    min(
+                        self.pending_queue_index,
+                        len(queue) - 1
+                    )
                 )
-                song = queue[target_index]
+
+                song = queue[
+                    target_index
+                ]
+
                 self.pending_queue_index = None
                 self.finished_handled = False
-                self.play_song(song, queue, target_index)
+
+                self.play_song(
+                    song,
+                    queue,
+                    target_index
+                )
+
                 return
 
             self.pending_queue_index = None
 
-        repeat_mode = self.music_settings["repeat_mode"]
+        repeat_mode = self.music_settings[
+            "repeat_mode"
+        ]
 
+        # ---------------------------------------------------------
+        # Repeat current song.
+        # ---------------------------------------------------------
         if repeat_mode == "song":
             song = self.library.current_song()
-            self.player.load(song)
-            self.finished_handled = False
-            self.player.play()
+
+            if song is not None:
+                self.player.load(song)
+                self.finished_handled = False
+                self.player.play()
+
             return
 
+        # ---------------------------------------------------------
+        # Establish the active song queue.
+        # ---------------------------------------------------------
+        queue = self.get_drawer_queue()
+
+        if not queue:
+            self.player.stop()
+            return
+
+        current_index = (
+            self.get_current_queue_index()
+        )
+
+        # ---------------------------------------------------------
+        # More songs remain in this playlist.
+        # ---------------------------------------------------------
+        if current_index < len(queue) - 1:
+            next_index = (
+                current_index + 1
+            )
+
+            self.finished_handled = False
+
+            self.play_song(
+                queue[next_index],
+                queue=queue,
+                queue_index=next_index
+            )
+
+            return
+
+        # ---------------------------------------------------------
+        # We reached the END of the current playlist.
+        #
+        # A specifically queued playlist takes priority over
+        # playlist repeat.
+        # ---------------------------------------------------------
+        if self.start_next_queued_playlist():
+            return
+
+        # ---------------------------------------------------------
+        # No next playlist queued:
+        # repeat this playlist from the beginning.
+        # ---------------------------------------------------------
         if repeat_mode == "playlist":
             self.finished_handled = False
-            self.next_song()
+
+            self.play_song(
+                queue[0],
+                queue=queue,
+                queue_index=0
+            )
+
             return
 
+        # ---------------------------------------------------------
+        # Nothing left to play.
+        # ---------------------------------------------------------
         self.player.stop()
-
 
 
     def get_drawer_playlist_name(self):
@@ -1071,7 +1324,11 @@ class MusicScreen:
                 if self.drawer_queue_index < len(queue) - 1:
                     self.drawer_queue_index += 1
                     self.begin_drawer_hold(key)
-                return True
+
+                else:
+                    self.enter_drawer_playlist_picker()
+
+                return True 
 
             if key == pygame.K_RETURN:
                 self.queue_selected_song()
@@ -1080,7 +1337,265 @@ class MusicScreen:
             # LEFT and RIGHT intentionally do nothing in queue navigation.
             return True
 
+        elif self.drawer_section == "playlist_picker":
+            items = self.drawer_playlist_items
+
+            if key == pygame.K_UP:
+                if self.drawer_playlist_index <= 0:
+                    self.drawer_section = "queue"
+
+                    queue = self.get_drawer_queue()
+
+                    if queue:
+                        self.drawer_queue_index = (
+                            len(queue) - 1
+                        )
+
+                else:
+                    self.drawer_playlist_index -= 1
+
+                return True
+
+            if key == pygame.K_DOWN:
+                if self.drawer_playlist_index < len(items) - 1:
+                    self.drawer_playlist_index += 1
+
+                return True
+
+            if key == pygame.K_RETURN:
+                if items:
+                    playlist_tag, playlist = items[
+                        self.drawer_playlist_index
+                    ]
+
+                    self.queue_playlist(
+                        playlist_tag
+                    )
+
+                return True
+
+            return True
+
         return True
+
+    def draw_playlist_picker_section(
+        self,
+        screen,
+        rect,
+        drawer_w,
+        h
+    ):
+        items = self.drawer_playlist_items
+
+        title_y = (
+            rect.top
+            + int(h * 0.30)
+        )
+
+        title_surface = (
+            self.home_item_font.render(
+                "CHOOSE NEXT PLAYLIST",
+                True,
+                (245, 245, 245)
+            )
+        )
+
+        screen.blit(
+            title_surface,
+            title_surface.get_rect(
+                center=(
+                    rect.left
+                    + drawer_w * 0.5,
+                    title_y
+                )
+            )
+        )
+
+        if not items:
+            empty_surface = (
+                self.home_small_font.render(
+                    "No playlists available",
+                    True,
+                    (135, 135, 145)
+                )
+            )
+
+            screen.blit(
+                empty_surface,
+                empty_surface.get_rect(
+                    center=(
+                        rect.left
+                        + drawer_w * 0.5,
+                        rect.top
+                        + int(h * 0.50)
+                    )
+                )
+            )
+            return
+
+        row_start_y = (
+            rect.top
+            + int(h * 0.40)
+        )
+
+        row_gap = int(
+            h * 0.085
+        )
+
+        row_height = int(
+            h * 0.070
+        )
+
+        left_padding = int(
+            drawer_w * 0.08
+        )
+
+        right_padding = int(
+            drawer_w * 0.08
+        )
+
+        row_width = (
+            drawer_w
+            - left_padding
+            - right_padding
+        )
+
+        max_visible = 5
+
+        first_index = max(
+            0,
+            min(
+                self.drawer_playlist_index - 2,
+                max(
+                    0,
+                    len(items) - max_visible
+                )
+            )
+        )
+
+        visible_items = items[
+            first_index:
+            first_index + max_visible
+        ]
+
+        for offset, (
+            playlist_tag,
+            playlist
+        ) in enumerate(
+            visible_items
+        ):
+            actual_index = (
+                first_index + offset
+            )
+
+            row_y = (
+                row_start_y
+                + offset * row_gap
+            )
+
+            selected = (
+                actual_index
+                == self.drawer_playlist_index
+            )
+
+            queued = (
+                playlist_tag
+                in self.queued_playlist_tags
+            )
+
+            row_rect = pygame.Rect(
+                rect.left + left_padding,
+                row_y - row_height // 2,
+                row_width,
+                row_height
+            )
+
+            if selected:
+                pygame.draw.rect(
+                    screen,
+                    (43, 43, 52),
+                    row_rect,
+                    border_radius=7
+                )
+
+            display_name = playlist.get(
+                "display_name",
+                playlist_tag
+            )
+
+            song_count = len(
+                playlist.get(
+                    "songs",
+                    []
+                )
+            )
+
+            name_surface = (
+                self.song_list_title_font.render(
+                    self.fit_text(
+                        display_name,
+                        self.song_list_title_font,
+                        int(row_width * 0.62)
+                    ),
+                    True,
+                    (
+                        255,
+                        255,
+                        255
+                    )
+                    if selected
+                    else (
+                        205,
+                        205,
+                        215
+                    )
+                )
+            )
+
+            screen.blit(
+                name_surface,
+                name_surface.get_rect(
+                    midleft=(
+                        row_rect.left + 10,
+                        row_rect.centery
+                    )
+                )
+            )
+
+            if queued:
+                right_text = "QUEUED"
+                right_color = (
+                    245,
+                    245,
+                    245
+                )
+            else:
+                right_text = "{}".format(
+                    song_count
+                )
+                right_color = (
+                    135,
+                    135,
+                    145
+                )
+
+            right_surface = (
+                self.home_small_font.render(
+                    right_text,
+                    True,
+                    right_color
+                )
+            )
+
+            screen.blit(
+                right_surface,
+                right_surface.get_rect(
+                    midright=(
+                        row_rect.right - 10,
+                        row_rect.centery
+                    )
+                )
+            )
 
     def draw_music_drawer(self, screen):
         if self.drawer_progress <= 0:
@@ -1266,6 +1781,15 @@ class MusicScreen:
                 underline_rect,
                 border_radius=max(1, underline_height // 2)
             )
+
+        if self.drawer_section == "playlist_picker":
+            self.draw_playlist_picker_section(
+                screen,
+                rect,
+                drawer_w,
+                h
+            )
+            return
 
         # ---------------------------------------------------------
         # Playlist metadata and five-song queue preview
