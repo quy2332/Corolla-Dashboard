@@ -1,4 +1,15 @@
+import os
 import platform
+
+if (
+    platform.system() == "Linux"
+    and "microsoft" in platform.release().lower()
+):
+    os.environ.setdefault(
+        "SDL_AUDIODRIVER",
+        "pulseaudio"
+    )
+
 import pygame
 import threading
 import time

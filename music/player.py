@@ -12,8 +12,12 @@ class MusicPlayer:
         self.audio_available = False
 
         try:
-            pygame.mixer.init()
-
+            pygame.mixer.init(
+                frequency=48000,
+                size=-16,
+                channels=2,
+                buffer=8192
+            )
             pygame.mixer.music.set_endevent(MUSIC_ENDED)
             pygame.mixer.music.set_volume(self.volume)
 
