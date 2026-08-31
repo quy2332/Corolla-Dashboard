@@ -25,26 +25,24 @@ class Song:
 
 
 class MusicLibrary:
-    def __init__(
-        self,
-        root_path="../corolla_os/corolla_music"
-    ):
+    def __init__(self, root_path=None):
+        if root_path is None:
+            project_root = os.path.dirname(
+                os.path.dirname(
+                    os.path.abspath(__file__)
+                )
+            )
+
+            root_path = os.path.join(
+                project_root,
+                "corolla_music"
+            )
+
         self.root_path = root_path
-
         self.songs = []
-
-        # All three collections use the same structure:
-        #
-        # {
-        #     "K-Pop": {
-        #         "display_name": "K-Pop",
-        #         "songs": [...]
-        #     }
-        # }
         self.playlists = {}
         self.artists = {}
         self.tags = {}
-
         self.current_index = 0
 
         self.scan()
