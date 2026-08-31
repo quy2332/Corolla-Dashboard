@@ -1,9 +1,0 @@
-__pycache__/
-*.pyc
-*.pyo
-*.swp
-.vscode/
-
-corolla_music/
-/music_import/
-.venv/
