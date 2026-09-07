@@ -1,5 +1,6 @@
 import os
 import platform
+import threading
 
 if (
     platform.system() == "Linux"
@@ -11,22 +12,31 @@ if (
     )
 
 import pygame
-import threading
-import time
 
 from telemetry.replay import CsvReplaySource
+
+from navigation.bluetooth_source import (
+    BluetoothNavigationSource
+)
+
 from ui.dashboard import Dashboard
 
-
-source = CsvReplaySource(
-    "data/mpg_replay.csv",
-    realtime=True
-)
 
 is_raspberry_pi = (
     platform.machine().startswith("arm")
     or platform.machine().startswith("aarch")
 )
+
+
+telemetry_source = CsvReplaySource(
+    "data/mpg_replay.csv",
+    realtime=True
+)
+
+navigation_source = BluetoothNavigationSource(
+    channel=1
+)
+
 
 dashboard = Dashboard(
     width=1024,
@@ -34,31 +44,62 @@ dashboard = Dashboard(
     fullscreen=is_raspberry_pi
 )
 
-latest_state = None
+
+latest_telemetry_state = None
+latest_navigation_state = None
+
 state_lock = threading.Lock()
 
 
 def telemetry_worker():
-    global latest_state
+    global latest_telemetry_state
 
-    for state in source.samples():
+    for state in telemetry_source.samples():
         with state_lock:
-            latest_state = state
+            latest_telemetry_state = state
 
 
-worker = threading.Thread(
+def navigation_worker():
+    global latest_navigation_state
+
+    try:
+        for state in navigation_source.samples():
+            with state_lock:
+                latest_navigation_state = state
+
+    except Exception as error:
+        print(
+            "[GPS] Navigation worker stopped:",
+            error
+        )
+
+
+telemetry_thread = threading.Thread(
     target=telemetry_worker,
     daemon=True
 )
-worker.start()
+
+navigation_thread = threading.Thread(
+    target=navigation_worker,
+    daemon=True
+)
+
+telemetry_thread.start()
+navigation_thread.start()
 
 
 try:
     while dashboard.running:
         with state_lock:
-            state = latest_state
+            telemetry_state = (
+                latest_telemetry_state
+            )
 
-        if state is None:
+            navigation_state = (
+                latest_navigation_state
+            )
+
+        if telemetry_state is None:
             dashboard.handle_events()
             dashboard.update()
 
@@ -74,7 +115,10 @@ try:
             dashboard.clock.tick(30)
             continue
 
-        dashboard.render(state)
+        dashboard.render(
+            telemetry_state,
+            navigation_state
+        )
 
 finally:
     dashboard.close()

@@ -17,12 +17,16 @@ from ui.widgets.volume_overlay import VolumeOverlay
 
 from music.player import MUSIC_ENDED
 
+from system.map_projection import MapProjection
+
 class Dashboard:
     def __init__(self, width=1024, height=600, fullscreen=True):
         pygame.init()
         pygame.mouse.set_visible(False)
 
         flags = pygame.FULLSCREEN if fullscreen else 0
+
+        self.display_flags = flags
 
         self.clock = pygame.time.Clock()
 
@@ -119,7 +123,73 @@ class Dashboard:
         self.power_hold_consumed = False
         self.shutdown_in_progress = False
 
+        self.map_projection = MapProjection()
+        self.projection_mode = False
+
         self.running = True
+
+
+    def start_map_projection(self):
+        if self.map_projection.is_active():
+            return True
+
+        pygame.event.set_grab(False)
+        pygame.mouse.set_visible(True)
+        pygame.event.clear()
+
+        # Fully release Pygame's fullscreen window and video
+        # resources so scrcpy behaves exactly as it did alone.
+        pygame.display.quit()
+
+        self.projection_mode = True
+
+        time.sleep(0.35)
+
+        started = self.map_projection.start()
+
+        if not started:
+            self.projection_mode = False
+            self.restore_dashboard_display()
+
+        return started    
+
+    def restore_dashboard_display(self):
+        if not pygame.display.get_init():
+            pygame.display.init()
+
+        self.screen = pygame.display.set_mode(
+            (self.width, self.height),
+            self.display_flags,
+        )
+
+        pygame.display.set_caption(
+            "Corolla OS"
+        )
+
+        pygame.event.set_grab(False)
+        pygame.mouse.set_visible(False)
+        pygame.event.clear()
+
+    def service_map_projection(self):
+        if not self.projection_mode:
+            return False
+
+        self.map_projection.update()
+
+        if self.map_projection.is_active():
+            return True
+
+        self.map_projection.consume_return_request()
+
+        self.projection_mode = False
+
+        self.restore_dashboard_display()
+
+        self.current_screen_name = "main_menu"
+        self.split_mode = False
+        self.sidebar_open = False
+
+        return False
 
     def get_music_screen(self):
         return self.screens.get("music")
@@ -162,17 +232,26 @@ class Dashboard:
         else:
             self.current_screen_name = selected
 
+            if selected == "gps":
+                self.start_map_projection()
+
+
     def exit_split_mode(self):
         self.current_screen_name = self.left_screen_name
         self.split_mode = False
 
     def maximize_focused_panel(self):
         if self.focus_side == "left":
-            self.current_screen_name = self.left_screen_name
+            selected = self.left_screen_name
         else:
-            self.current_screen_name = self.right_screen_name
+            selected = self.right_screen_name
 
+        self.current_screen_name = selected
         self.split_mode = False
+
+        if selected == "gps":
+            self.start_map_projection()
+
 
     def open_sidebar_split(self):
         selected = self.sidebar_options[self.sidebar_selected_index]
@@ -652,6 +731,15 @@ class Dashboard:
     def update(self):
         self.update_long_press()
 
+        if self.map_projection.consume_return_request():
+            self.restore_dashboard_display()
+
+            self.current_screen_name = "main_menu"
+            self.split_mode = False
+            self.sidebar_open = False
+
+        self.update_long_press()
+
         if self.sidebar_open:
             self.sidebar_anim_progress = min(
                 1.0,
@@ -665,22 +753,56 @@ class Dashboard:
 
 
 
-    def draw_screen_by_name(self, target_surface, screen_name, state, slot="fullscreen"):
+    def draw_screen_by_name(
+        self,
+        target_surface,
+        screen_name,
+        telemetry_state,
+        navigation_state=None,
+        slot="fullscreen"
+    ):
         if screen_name == "main_menu":
-            self.main_menu.draw(target_surface, state)
-        elif screen_name == "gauge":
-            self.screens[screen_name].draw(target_surface, state, slot=slot)
-        else:
-            self.screens[screen_name].draw(target_surface, state)
+            self.main_menu.draw(
+                target_surface,
+                telemetry_state
+            )
 
-    def render_active_screen(self, state):
+        elif screen_name == "gauge":
+            self.screens[screen_name].draw(
+                target_surface,
+                telemetry_state,
+                slot=slot
+            )
+
+        elif screen_name == "gps":
+            self.screens[screen_name].draw(
+                target_surface,
+                navigation_state
+            )
+
+        else:
+            self.screens[screen_name].draw(
+                target_surface,
+                telemetry_state
+            ) 
+
+
+    def render_active_screen(
+        self,
+        telemetry_state,
+        navigation_state=None
+    ):
         if self.split_mode:
-            self.render_split(state)
+            self.render_split(
+                telemetry_state,
+                navigation_state
+            )
         else:
             self.draw_screen_by_name(
                 self.screen,
                 self.current_screen_name,
-                state
+                telemetry_state,
+                navigation_state
             )
 
     def render_shutdown_confirm(self):
@@ -824,52 +946,119 @@ class Dashboard:
                 )
             )
 
-    def render_split(self, state):
-        left_rect = pygame.Rect(0, 0, self.width // 2, self.height)
-        right_rect = pygame.Rect(self.width // 2, 0, self.width // 2, self.height)
+    def render_split(
+        self,
+        telemetry_state,
+        navigation_state=None
+    ):
+        left_rect = pygame.Rect(
+            0,
+            0,
+            self.width // 2,
+            self.height
+        )
 
-        self.screen.fill((15, 15, 18), left_rect)
-        self.screen.fill((15, 15, 18), right_rect)
+        right_rect = pygame.Rect(
+            self.width // 2,
+            0,
+            self.width // 2,
+            self.height
+        )
 
-        left_surface = self.screen.subsurface(left_rect)
-        right_surface = self.screen.subsurface(right_rect)
+        self.screen.fill(
+            (15, 15, 18),
+            left_rect
+        )
+
+        self.screen.fill(
+            (15, 15, 18),
+            right_rect
+        )
+
+        left_surface = self.screen.subsurface(
+            left_rect
+        )
+
+        right_surface = self.screen.subsurface(
+            right_rect
+        )
 
         if self.left_screen_name == "gauge":
-            self.screen.set_clip(left_rect)
+            self.screen.set_clip(
+                left_rect
+            )
+
             self.draw_screen_by_name(
                 self.screen,
                 self.left_screen_name,
-                state,
+                telemetry_state,
+                navigation_state,
                 slot="left"
             )
-            self.screen.set_clip(None)
+
+            self.screen.set_clip(
+                None
+            )
         else:
-            self.draw_screen_by_name(left_surface, self.left_screen_name, state)
+            self.draw_screen_by_name(
+                left_surface,
+                self.left_screen_name,
+                telemetry_state,
+                navigation_state
+            )
 
         if self.right_screen_name == "gauge":
-            self.screen.set_clip(right_rect)
+            self.screen.set_clip(
+                right_rect
+            )
+
             self.draw_screen_by_name(
                 self.screen,
                 self.right_screen_name,
-                state,
+                telemetry_state,
+                navigation_state,
                 slot="right"
             )
-            self.screen.set_clip(None)
+
+            self.screen.set_clip(
+                None
+            )
         else:
-            self.draw_screen_by_name(right_surface, self.right_screen_name, state)
+            self.draw_screen_by_name(
+                right_surface,
+                self.right_screen_name,
+                telemetry_state,
+                navigation_state
+            )
 
         pygame.draw.line(
             self.screen,
             (255, 255, 255),
-            (self.width // 2, 0),
-            (self.width // 2, self.height),
+            (
+                self.width // 2,
+                0
+            ),
+            (
+                self.width // 2,
+                self.height
+            ),
             2
         )
 
         if self.focus_side == "left":
-            pygame.draw.rect(self.screen, (255, 255, 255), left_rect, 3)
+            pygame.draw.rect(
+                self.screen,
+                (255, 255, 255),
+                left_rect,
+                3
+            )
         else:
-            pygame.draw.rect(self.screen, (255, 255, 255), right_rect, 3)
+            pygame.draw.rect(
+                self.screen,
+                (255, 255, 255),
+                right_rect,
+                3
+            )
 
     def render_sidebar(self):
         sidebar_w = int(self.width * 0.18)
@@ -1072,17 +1261,38 @@ class Dashboard:
             )
 
         self.render_shutdown_confirm()
-        self.render_debug_overlay()
- 
-    def render(self, state):
+        self.render_debug_overlay
+
+
+    def render(
+        self,
+        telemetry_state,
+        navigation_state=None
+    ):
+        # Do not render Corolla OS while scrcpy owns the display.
+        if self.service_map_projection():
+            self.clock.tick(10)
+            return
+
         self.handle_events()
 
-        self.screen.fill((15, 15, 18))
+        # Selecting GPS may have launched scrcpy while processing
+        # the event above. Stop this frame before drawing anything.
+        if self.service_map_projection():
+            self.clock.tick(10)
+            return
 
-        self.render_debug_overlay()
+        self.screen.fill(
+            (15, 15, 18)
+        )
 
         self.update()
-        self.render_active_screen(state)
+
+        self.render_active_screen(
+            telemetry_state,
+            navigation_state
+        )
+
         self.render_overlays()
 
         pygame.display.flip()
@@ -1141,6 +1351,10 @@ class Dashboard:
             return
 
         self.shutdown_in_progress = True
+        
+        self.map_projection.stop(
+            request_return=False
+        )
 
         music_screen = self.get_music_screen()
 
@@ -1185,4 +1399,5 @@ class Dashboard:
 
     
     def close(self):
+        self.map_projection.close()
         pygame.quit()

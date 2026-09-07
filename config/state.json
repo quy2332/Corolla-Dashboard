@@ -1,25 +1,29 @@
 {
-  "current_screen": "main_menu",
+  "current_screen": "music",
   "split_mode": false,
   "music": {
-    "song_path": "/home/quy/corolla_os/corolla_music/bao_anh/Tìm Em.mp3",
-    "position": 3,
-    "was_playing": false,
-    "volume": 0.15000000000000008,
+    "song_path": "/home/quy/corolla_os/corolla_music/bao_anh/Từng Là Của Nhau.mp3",
+    "position": 180,
+    "was_playing": true,
+    "volume": 0.30000000000000004,
     "repeat_mode": "playlist",
     "shuffle": true,
     "active_playlist": "__all_songs__",
     "queue": [
-      "/home/quy/corolla_os/corolla_music/bao_anh/Tìm Em.mp3",
       "/home/quy/corolla_os/corolla_music/bao_anh/Từng Là Của Nhau.mp3",
+      "/home/quy/corolla_os/corolla_music/haohinh/Nơi Chỉ Còn Ta (D-Kuro Remix).mp3",
+      "/home/quy/corolla_os/corolla_music/hoaprox/Nơi Em Muốn Tới.mp3",
+      "/home/quy/corolla_os/corolla_music/hoaprox/Vô Tình (Feliks Alvin Remix).mp3",
       "/home/quy/corolla_os/corolla_music/le_sserafim/Perfect Night (Jersey Club Remix).mp3",
       "/home/quy/corolla_os/corolla_music/loona/Butterfly (Lazerbwoi Jersey Flip).mp3",
       "/home/quy/corolla_os/corolla_music/loona/Hula Hoop (Future Funk Mix).mp3",
       "/home/quy/corolla_os/corolla_music/newjeans/ASAP (Jersey Club Remix By M1R4).mp3",
       "/home/quy/corolla_os/corolla_music/newjeans/How Sweet (UK Garage Remix by Swiiim).mp3",
-      "/home/quy/corolla_os/corolla_music/newjeans/Zero (Coke Studio Remix Solo Version).mp3"
+      "/home/quy/corolla_os/corolla_music/newjeans/Zero (Coke Studio Remix Solo Version).mp3",
+      "/home/quy/corolla_os/corolla_music/ngoc_dolil/Cùng Anh.mp3"
     ],
-    "queue_index": 0
+    "queue_index": 0,
+    "queued_playlists": []
   },
-  "shutdown_timestamp": 1787602445
+  "shutdown_timestamp": 1788780441
 }

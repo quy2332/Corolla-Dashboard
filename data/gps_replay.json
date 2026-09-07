@@ -1,0 +1,38 @@
+[
+    {
+        "time": 0,
+        "instruction": "Turn right",
+        "road": "7th St",
+        "distance_m": 420,
+        "remaining_miles": 7.4,
+        "eta_minutes": 18,
+        "heading": 92
+    },
+    {
+        "time": 1,
+        "instruction": "Turn right",
+        "road": "7th St",
+        "distance_m": 380,
+        "remaining_miles": 7.3,
+        "eta_minutes": 18,
+        "heading": 93
+    },
+    {
+        "time": 2,
+        "instruction": "Turn right",
+        "road": "7th St",
+        "distance_m": 340,
+        "remaining_miles": 7.2,
+        "eta_minutes": 17,
+        "heading": 94
+    },
+    {
+        "time": 3,
+        "instruction": "Turn right",
+        "road": "7th St",
+        "distance_m": 290,
+        "remaining_miles": 7.1,
+        "eta_minutes": 17,
+        "heading": 95
+    }
+]
