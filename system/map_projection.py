@@ -26,7 +26,11 @@ class MapProjection:
         "--max-fps=20",
         "--video-bit-rate=2M",
         "--no-audio",
-        "--fullscreen",
+        "--window-x=0",
+        "--window-y=0",
+        "--window-width=1024",
+        "--window-height=600",
+        "--window-borderless",
     ]
 
     def __init__(self):

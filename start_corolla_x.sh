@@ -4,11 +4,20 @@ xset -dpms
 xset s off
 xset s noblank
 
+unclutter \
+  -idle 0.1 \
+  -root &
+
+unclutter_pid=$!
+
 openbox &
 openbox_pid=$!
 
-cleanup() {
+icleanup() {
+    kill "$unclutter_pid" 2>/dev/null
     kill "$openbox_pid" 2>/dev/null
+
+    wait "$unclutter_pid" 2>/dev/null
     wait "$openbox_pid" 2>/dev/null
 }
 

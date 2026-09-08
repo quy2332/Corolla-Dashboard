@@ -1,3 +1,4 @@
+import os
 import time
 import subprocess
 import pygame
@@ -21,12 +22,23 @@ from system.map_projection import MapProjection
 
 class Dashboard:
     def __init__(self, width=1024, height=600, fullscreen=True):
+        # Under Xorg, a borderless 1024x600 window behaves like
+        # fullscreen without SDL exclusively owning input.
+        if fullscreen:
+            os.environ[
+                "SDL_VIDEO_WINDOW_POS"
+            ] = "0,0"
+
         pygame.init()
         pygame.mouse.set_visible(False)
 
-        flags = pygame.FULLSCREEN if fullscreen else 0
+        flags = (
+            pygame.NOFRAME
+            if fullscreen
+            else 0
+        )
 
-        self.display_flags = flags
+        self.display_flags = flags 
 
         self.clock = pygame.time.Clock()
 
@@ -134,24 +146,18 @@ class Dashboard:
             return True
 
         pygame.event.set_grab(False)
-        pygame.mouse.set_visible(True)
+        pygame.mouse.set_visible(False)
         pygame.event.clear()
 
-        # Fully release Pygame's fullscreen window and video
-        # resources so scrcpy behaves exactly as it did alone.
-        pygame.display.quit()
-
+        # Keep Pygame, its display, and the music mixer alive.
         self.projection_mode = True
-
-        time.sleep(0.35)
 
         started = self.map_projection.start()
 
         if not started:
             self.projection_mode = False
-            self.restore_dashboard_display()
 
-        return started    
+        return started   
 
     def restore_dashboard_display(self):
         if not pygame.display.get_init():
@@ -183,13 +189,16 @@ class Dashboard:
 
         self.projection_mode = False
 
-        self.restore_dashboard_display()
-
         self.current_screen_name = "main_menu"
         self.split_mode = False
         self.sidebar_open = False
 
+        pygame.event.clear()
+        pygame.mouse.set_visible(False)
+
         return False
+
+
 
     def get_music_screen(self):
         return self.screens.get("music")
@@ -1261,7 +1270,7 @@ class Dashboard:
             )
 
         self.render_shutdown_confirm()
-        self.render_debug_overlay
+        self.render_debug_overlay()
 
 
     def render(
@@ -1269,17 +1278,24 @@ class Dashboard:
         telemetry_state,
         navigation_state=None
     ):
-        # Do not render Corolla OS while scrcpy owns the display.
-        if self.service_map_projection():
-            self.clock.tick(10)
-            return
+        projection_active = (
+            self.service_map_projection()
+        )
 
+        # Keep processing music completion, keyboard, and system
+        # events even while scrcpy is above Corolla OS.
         self.handle_events()
 
-        # Selecting GPS may have launched scrcpy while processing
-        # the event above. Stop this frame before drawing anything.
-        if self.service_map_projection():
-            self.clock.tick(10)
+        # A key event may have started or stopped projection.
+        projection_active = (
+            self.service_map_projection()
+        )
+
+        if projection_active:
+            # Pygame and pygame.mixer remain alive underneath
+            # scrcpy, but we avoid wasting resources rendering
+            # a dashboard that is presently covered.
+            self.clock.tick(20)
             return
 
         self.screen.fill(
@@ -1296,7 +1312,8 @@ class Dashboard:
         self.render_overlays()
 
         pygame.display.flip()
-        self.clock.tick(30)
+        self.clock.tick(30) 
+
 
     def get_sidebar_icon(self, screen_name, icon_size):
         key = (screen_name, icon_size)

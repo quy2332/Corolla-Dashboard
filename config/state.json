@@ -1,15 +1,17 @@
 {
-  "current_screen": "music",
+  "current_screen": "main_menu",
   "split_mode": false,
   "music": {
     "song_path": "/home/quy/corolla_os/corolla_music/bao_anh/Từng Là Của Nhau.mp3",
-    "position": 180,
-    "was_playing": true,
-    "volume": 0.30000000000000004,
+    "position": 0,
+    "was_playing": false,
+    "volume": 0.35000000000000003,
     "repeat_mode": "playlist",
     "shuffle": true,
     "active_playlist": "__all_songs__",
     "queue": [
+      "/home/quy/corolla_os/corolla_music/anh_sang_aza/Tâm Trí Lang Thang (Lon Ton Version).mp3",
+      "/home/quy/corolla_os/corolla_music/bao_anh/Tìm Em.mp3",
       "/home/quy/corolla_os/corolla_music/bao_anh/Từng Là Của Nhau.mp3",
       "/home/quy/corolla_os/corolla_music/haohinh/Nơi Chỉ Còn Ta (D-Kuro Remix).mp3",
       "/home/quy/corolla_os/corolla_music/hoaprox/Nơi Em Muốn Tới.mp3",
@@ -22,8 +24,8 @@
       "/home/quy/corolla_os/corolla_music/newjeans/Zero (Coke Studio Remix Solo Version).mp3",
       "/home/quy/corolla_os/corolla_music/ngoc_dolil/Cùng Anh.mp3"
     ],
-    "queue_index": 0,
+    "queue_index": 2,
     "queued_playlists": []
   },
-  "shutdown_timestamp": 1788780441
+  "shutdown_timestamp": 1788870076
 }
